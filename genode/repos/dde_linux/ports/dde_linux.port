@@ -1,0 +1,242 @@
+LICENSE     := GPLv2
+VERSION     := 2
+DOWNLOADS   := dwc_otg.git usb.archive intel_fb.archive lxip.archive \
+               wifi.archive fec.archive libnl.archive wpa_supplicant.git \
+               fw.archive usb_host.archive dwc_otg_host.git usb_hid.archive \
+               usb_net.archive imx8_fb.archive
+
+#
+# Tools
+#
+$(call check_tool,flex)
+$(call check_tool,bison)
+
+FLEX = flex
+YACC = bison
+
+#
+# The git checkout checks for the existence of SRC_DIR, which is created by the
+# Linux extraction, therefore make sure to checkout the GIT sources first.
+#
+usb.archive: dwc_otg.git
+usb_host.archive: dwc_otg_host.git
+
+
+#
+# USB
+#
+SRC_DIR_USB  := src/lib/usb
+VERSION_USB  := 4.4.3
+URL(usb)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_USB).tar.xz
+SHA(usb)     := 0b379cb19bbd7e38fc5a9a000ea927db55cce519a7400ec7fa705c581a6491dd
+DIR(usb)     := $(SRC_DIR_USB)
+TAR_OPT(usb) := --strip-components=1 --files-from - < <(sed 's/-x.x.x/-$(VERSION_USB)/g' $(REP_DIR)/usb.list)
+HASH_INPUT   += $(REP_DIR)/usb.list
+
+#
+# USB host controller
+#
+SRC_DIR_USB_HOST  := src/drivers/usb_host
+VERSION_USB_HOST  := 4.16.3
+URL(usb_host)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_USB_HOST).tar.xz
+SHA(usb_host)     := 0d6971a81da97e38b974c5eba31a74803bfe41aabc46d406c3acda56306c81a3
+DIR(usb_host)     := $(SRC_DIR_USB_HOST)
+TAR_OPT(usb_host) := --strip-components=1 --files-from - < <(sed 's/-x.x.x/-$(VERSION_USB_HOST)/g' $(REP_DIR)/usb_host.list)
+HASH_INPUT        += $(REP_DIR)/usb_host.list
+
+SRC_DIR_USB_HID  := src/drivers/usb_hid
+VERSION_USB_HID  := 4.16.3
+URL(usb_hid)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_USB_HID).tar.xz
+SHA(usb_hid)     := 0d6971a81da97e38b974c5eba31a74803bfe41aabc46d406c3acda56306c81a3
+DIR(usb_hid)     := $(SRC_DIR_USB_HID)
+TAR_OPT(usb_hid) := --strip-components=1 --files-from - < <(sed 's/-x.x.x/-$(VERSION_USB_HID)/g' $(REP_DIR)/usb_hid.list)
+HASH_INPUT       += $(REP_DIR)/usb_hid.list
+
+SRC_DIR_USB_NET  := src/drivers/usb_net
+VERSION_USB_NET  := 4.16.3
+URL(usb_net)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_USB_NET).tar.xz
+SHA(usb_net)     := 0d6971a81da97e38b974c5eba31a74803bfe41aabc46d406c3acda56306c81a3
+DIR(usb_net)     := $(SRC_DIR_USB_NET)
+TAR_OPT(usb_net) := --strip-components=1 --files-from - < <(sed 's/-x.x.x/-$(VERSION_USB_NET)/g' $(REP_DIR)/usb_net.list)
+HASH_INPUT       += $(REP_DIR)/usb_net.list
+
+#
+# Raspberry Pi USB controller
+#
+URL(dwc_otg) := https://github.com/ssumpf/dwc_otg.git
+REV(dwc_otg) := r3
+DIR(dwc_otg) := $(SRC_DIR_USB)/drivers/usb/host/dwc_otg
+
+URL(dwc_otg_host) := https://github.com/skalk/dwc_otg.git
+REV(dwc_otg_host) := r4
+DIR(dwc_otg_host) := $(SRC_DIR_USB_HOST)/drivers/usb/host
+
+
+#
+# Intel framebuffer driver
+#
+SRC_DIR_INTEL_FB  := src/drivers/framebuffer/intel
+VERSION_INTEL_FB  := 4.16.3
+URL(intel_fb)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_INTEL_FB).tar.xz
+SHA(intel_fb)     := 0d6971a81da97e38b974c5eba31a74803bfe41aabc46d406c3acda56306c81a3
+DIR(intel_fb)     := $(SRC_DIR_INTEL_FB)
+TAR_OPT(intel_fb) := --strip-components=1  --files-from - < <(sed 's/-x.x.x/-$(VERSION_INTEL_FB)/g' $(REP_DIR)/intel_fb.list)
+HASH_INPUT        += $(REP_DIR)/intel_fb.list
+
+#
+# mac80211 stack, iwlwifi sources
+#
+SRC_DIR_WIFI  := src/lib/wifi
+VERSION_WIFI  := 4.16.3
+URL(wifi)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_WIFI).tar.xz
+SHA(wifi)     := 0d6971a81da97e38b974c5eba31a74803bfe41aabc46d406c3acda56306c81a3
+DIR(wifi)     := $(SRC_DIR_WIFI)
+TAR_OPT(wifi) := --strip-components=1  --files-from - < <(sed 's/-x.x.x/-$(VERSION_WIFI)/g' $(REP_DIR)/wifi.list)
+HASH_INPUT    += $(REP_DIR)/wifi.list
+
+#
+# IP stack sources
+#
+SRC_DIR_LXIP  := src/lib/lxip
+VERSION_LXIP  := 4.4.3
+URL(lxip)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_LXIP).tar.xz
+SHA(lxip)     := 0b379cb19bbd7e38fc5a9a000ea927db55cce519a7400ec7fa705c581a6491dd
+DIR(lxip)     := $(SRC_DIR_LXIP)
+TAR_OPT(lxip) := --strip-components=1  --files-from - < <(sed 's/-x.x.x/-$(VERSION_LXIP)/g' $(REP_DIR)/lxip.list)
+HASH_INPUT    += $(REP_DIR)/lxip.list
+
+#
+# Freescale Ethernet controller
+#
+SRC_DIR_FEC  := src/drivers/nic/fec
+VERSION_FEC  := 4.16.3
+URL(fec)     := https://www.kernel.org/pub/linux/kernel/v4.x/linux-$(VERSION_FEC).tar.xz
+SHA(fec)     := 0d6971a81da97e38b974c5eba31a74803bfe41aabc46d406c3acda56306c81a3
+DIR(fec)     := $(SRC_DIR_FEC)
+TAR_OPT(fec) := --strip-components=1  --files-from - < <(sed 's/-x.x.x/-$(VERSION_FEC)/g'     $(REP_DIR)/fec.list)
+HASH_INPUT   += $(REP_DIR)/fec.list
+
+#
+# i.MX8 Framebuffer driver
+#
+SRC_DIR_IMX8_FB  := src/drivers/framebuffer/imx8
+URL(imx8_fb)     := https://github.com/Freescale/linux-fslc/tarball/1ddf624
+NAME(imx8_fb)    := linux-4.14-2.0.x-imx.tgz
+SHA(imx8_fb)     := 879219874f74b420f2f49f197d418d800ad3b716b9cc3d2d7b85a6fbf2296928
+TAR_OPT(imx8_fb) := --strip-components=1 --files-from - < <(sed 's/linux-x.x.x/Freescale-linux-fslc-1ddf624/g' $(REP_DIR)/imx8_fb.list)
+DIR(imx8_fb)     := $(SRC_DIR_IMX8_FB)
+
+#
+# libnl sources
+#
+URL(libnl) := https://github.com/thom311/libnl/releases/download/libnl3_2_25/libnl-3.2.25.tar.gz
+SHA(libnl) := 8beb7590674957b931de6b7f81c530b85dc7c1ad8fbda015398bc1e8d1ce8ec5
+DIR(libnl) := src/lib/libnl
+
+#
+# wpa_supplicant sources
+#
+URL(wpa_supplicant) := git://w1.fi/srv/git/hostap.git
+REV(wpa_supplicant) := 25bd4e7beb582509596fe60cb3591e1299f3121b
+DIR(wpa_supplicant) := src/app/wpa_supplicant
+
+#
+# Firmware images
+#
+FW_REV  := 73f503c65139f368e6155eed8c74d006a2f0219d
+URL(fw) := https://github.com/cnuke/dde_linux_firmware/archive/$(FW_REV).tar.gz
+SHA(fw) := d5a61cb07384a828560b8f869e4e899cb723d462646a48b45c398514bb246925
+DIR(fw) := firmware
+
+#
+# Patches
+#
+PATCHES := $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/wpa*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/libnl*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/wifi*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/lxip*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/intel*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/usb_host*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/usb*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/intel*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/fec_*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/usb_hid*.patch)))
+PATCHES += $(addprefix patches/,$(notdir $(wildcard $(REP_DIR)/patches/imx8_fb*.patch)))
+
+#IP stack
+LXIP_OPT = -p1 -d$(SRC_DIR_LXIP)
+PATCH_OPT(patches/lxip_icmp.patch)         := $(LXIP_OPT)
+PATCH_OPT(patches/lxip_ip_config.patch)    := $(LXIP_OPT)
+PATCH_OPT(patches/lxip_log2.patch)         := $(LXIP_OPT)
+PATCH_OPT(patches/lxip_netlink.patch)      := $(LXIP_OPT)
+PATCH_OPT(patches/lxip_request_sock.patch) := $(LXIP_OPT)
+PATCH_OPT(patches/lxip_sk_wq.patch)        := $(LXIP_OPT)
+PATCH_OPT(patches/lxip_skbuff_cast.patch)  := $(LXIP_OPT)
+
+# WIFI
+WIFI_OPT = -p1 -d$(SRC_DIR_WIFI)
+PATCH_OPT(patches/wifi.patch)        := $(WIFI_OPT)
+PATCH_OPT(patches/wifi_mem.patch)    := $(WIFI_OPT)
+PATCH_OPT(patches/wifi_rfkill.patch) := $(WIFI_OPT)
+
+# libnl
+PATCH_OPT(patches/libnl.patch) := -p1 -d ${DIR(libnl)}
+
+# WPA supplicant
+PATCH_OPT(patches/wpa_supplicant.patch) := -p1 -d ${DIR(wpa_supplicant)}
+
+# USB
+USB_OPT = -p1 -d$(SRC_DIR_USB)
+PATCH_OPT(patches/usb_ax88179.patch)     := $(USB_OPT)
+PATCH_OPT(patches/usb_csum.patch)        := $(USB_OPT)
+PATCH_OPT(patches/usb_evdev.patch)       := $(USB_OPT)
+PATCH_OPT(patches/usb_input_mt.patch)    := $(USB_OPT)
+PATCH_OPT(patches/usb_mem.patch)         := $(USB_OPT)
+PATCH_OPT(patches/usb_usbnet.patch)      := $(USB_OPT)
+PATCH_OPT(patches/usb_rndis.patch)       := $(USB_OPT)
+PATCH_OPT(patches/usb_tv64.patch)        := $(USB_OPT)
+
+# USB HOST
+USB_HOST_OPT = -p1 -d$(SRC_DIR_USB_HOST)
+PATCH_OPT(patches/usb_host_mem.patch)    := $(USB_HOST_OPT)
+PATCH_OPT(patches/usb_host_omap.patch)   := $(USB_HOST_OPT)
+
+# USB HID
+USB_HID_OPT = -p1 -d$(SRC_DIR_USB_HID)
+PATCH_OPT(patches/usb_hid_usbhid.patch)    := $(USB_HID_OPT)
+PATCH_OPT(patches/usb_hid_wacom_sys.patch) := $(USB_HID_OPT)
+PATCH_OPT(patches/usb_hid_evdev.patch)     := $(USB_HID_OPT)
+
+# USB NET
+USB_NET_OPT = -p1 -d$(SRC_DIR_USB_NET)
+PATCH_OPT(patches/usb_net_skbuff_cast.patch) := $(USB_NET_OPT)
+
+# INTEL FB
+PATCH_OPT(patches/intel_fb_backlight.patch) := -p1 -d$(SRC_DIR_INTEL_FB)
+PATCH_OPT(patches/intel_fb_drm.patch)       := -p1 -d$(SRC_DIR_INTEL_FB)
+PATCH_OPT(patches/intel_fb_early.patch)     := -p1 -d$(SRC_DIR_INTEL_FB)
+# drop it when https://bugs.freedesktop.org/show_bug.cgi?id=107125 gets fixed
+PATCH_OPT(patches/intel_fb_hotplug.patch)   := -p1 -d$(SRC_DIR_INTEL_FB)
+
+# Freescale NIC
+PATCH_OPT(patches/fec_skbuff_cast.patch) := -p1 -d$(SRC_DIR_FEC)
+PATCH_OPT(patches/fec_tx_bounce_dma.patch) := -p1 -d$(SRC_DIR_FEC)
+PATCH_OPT(patches/fec_ndev_owner.patch) := -p1 -d$(SRC_DIR_FEC)
+
+# Freescale i.MX8 framebuffer
+IMX8_FB_OPT = -p1 -d$(SRC_DIR_IMX8_FB)
+PATCH_OPT(patches/imx8_fb_dcss_blkctl.patch)      := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_dcss_common.patch)      := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_dcss_ctxld.patch)       := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_dcss_scaler.patch)      := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_drm_connector.patch)    := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_drm_edid.patch)         := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_drm_mm.patch)           := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_drm_vblank.patch)       := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_fb.patch)               := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_imx_drm_core.patch)     := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_imx_hdcp.patch)         := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_imx_hdp.patch)          := $(IMX8_FB_OPT)
+PATCH_OPT(patches/imx8_fb_irq_imx_irqsteer.patch) := $(IMX8_FB_OPT)
+
+# vi: set ft=make :

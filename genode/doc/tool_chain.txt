@@ -1,0 +1,62 @@
+
+                            =================
+                            Genode tool chain
+                            =================
+
+The Genode OS framework depends on the GNU C++ compiler and tool chain. As
+most GNU compilers shipped with standard Linux distributions include
+distro-specific patches and configurations, these tools do not meet Genode's
+special requirements (e.g., thread-local storage configuration). Therefore,
+there exists a special tool chain adapted to the specific requirements of
+Genode.
+
+
+Recommended development platform
+################################
+
+We use recent [https://www.ubuntu.com/ - Ubuntu] LTS releases on our
+development hosts. Hence, Genode should always build without trouble on these
+platforms.
+
+
+Unified tool chain
+##################
+
+Starting with Genode version 11.11, there is a unified tool chain for all base
+platforms and supported CPU architectures (x86_32, x86_64, ARM, AARCH64, and
+RISC-V).
+For Genode development, we highly recommend the use of the official Genode
+tool chain. It can be obtained in two ways: as pre-compiled binaries or
+manually compiled:
+
+:Pre-compiled:
+  Our pre-compiled tool chain is runnable on Linux x86_32 and x86_64. The
+  archives for both versions will be extracted to
+  _/usr/local/genode/tool/<version>_.
+  To extract the archive, use the following command:
+  ! sudo tar xPf genode-toolchain-<version>-<arch>.tar.xz
+  The use of the 'P' option ensures that the tool chain will be installed at
+  the correct absolute path where the build system expects it to reside by
+  default. Please note, Genode OS Framework releases require a Genode tool
+  chain with an equal or next smaller version number.
+  [https://sourceforge.net/projects/genode/files/genode-toolchain/ - Download the pre-compiled tool chain...]
+
+:Compile from source:
+  For those of you who prefer compiling the tool chain from source, we provide
+  a tool for downloading, building, and installing the Genode tool chain. You
+  find the tool in Genode's source tree at 'tool/tool_chain'. For usage
+  instructions, just start the tool without arguments.
+
+In both cases, the tool chain is installed to _/usr/local/genode/tool/<version>_.
+This install location is expected by the build system by default.
+The tools are prefixed with 'genode-x86-', 'genode-arm-', 'genode-riscv-', or
+'genode-aarch64-' respectively so that it is safe to add the
+_/usr/local/genode/tool/<version>/bin/_ path to our 'PATH' environment
+variable (optional).
+
+Should you desire to use a different tool chain, create a file called
+_tools.conf_ in the _etc/_ subdirectory of your build directory where you can
+define the tool-chain prefix to be used:
+
+! CROSS_DEV_PREFIX = /path/to/your/custom/tool_chain/your-x86-
+

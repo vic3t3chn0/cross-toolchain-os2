@@ -1,0 +1,4 @@
+L4BID_CONF_AVAILABLE=yes
+L4BID_CPPFLAGS_SYSCALLS-=
+L4BID_DICE=did_not_find_dice___please_install_dice
+L4BID_DICE_INCDIR=/home/knoppix/os/src/l4/../dice/include

@@ -1,0 +1,199 @@
+
+                             ========
+                             Road Map
+                             ========
+
+
+Herein, we lay out our plans for evolving Genode. Progress in addition to this
+planning will very much depend on the degree of community support the project
+will receive. The
+[http:/about/challenges - Challenges] page collects some of our ideas to
+advance Genode in various further directions.
+
+The road map is not fixed. If there is commercial interest of pushing the
+Genode technology to a certain direction, we are willing to revisit our plans.
+
+
+Review of 2019
+##############
+
+For the road map 2019, we picked "bridging worlds" as our guiding theme:
+(1) Lowering the friction when combining existing software with Genode,
+(2) Fostering interoperability with widely used protocols and APIs, and
+(3) Making Genode easier to approach and generally more practical.
+
+With respect to (1), we identified Genode's custom tooling (build
+system, run scripts, ports mechanism, depot tools) as a point of
+friction. They are arguably powerful and flexible but require a lot of
+up-front learning. This is certainly a burden unacceptable for a casual
+developer without a black belt in Make and Expect/Tcl. The new
+[https://genode.org/documentation/release-notes/19.11#New_tooling_for_bridging_existing_build_systems_with_Genode - Goa]
+tool rearranges the existing tools in a way that puts the concerns of casual
+developers into focus, allowing for the use of commodity build systems,
+eliminating Tcl syntax from the equation, running sub-second test cycles, and
+streamlining the packaging of software.
+
+On account of (2), we
+[https://genode.org/documentation/release-notes/19.05#Broadened_CPU_architecture_support_and_updated_tool_chain - switched to C++17]
+by default, fostered the use of
+[https://genodians.org/ssumpf/2019-02-27-java-19-02 - Java],
+updated Qt5, and put
+[https://genode.org/documentation/release-notes/19.11#C_runtime_with_improved_POSIX_compatibility - POSIX]
+compatibility into the spotlight. We were eventually able to dissolve the need
+for our custom Unix runtime (Noux) because all features of Noux are covered by
+our regular libc now.
+
+Our biggest step towards (3) is the [https://genodians.org] website we
+started in winter 2019, which gives individual members of our community
+an easy way to present thoughts, projects, and experiences.
+Complementing Genode's formal documentation, it also conserves practical
+tips and tricks that were previously not covered in written form.
+
+When speaking of "bridging worlds", we should not forget to mention the
+tremendous effort to bring Sculpt-OS-like workloads to the 64-bit ARM world.
+Thanks to the added support for
+[https://genode.org/documentation/release-notes/19.08#64-bit_ARM_and_NXP_i.MX8 - multi-core AARCH64],
+hardware-based
+[https://genode.org/documentation/release-notes/19.11#Virtualization_of_64-bit_ARM_platforms - virtualization],
+and network/USB/graphics drivers for the i.MX8 SoC, the flexibility of Sculpt
+OS will eventually become available on PC hardware and ARM-based devices
+alike.
+
+Over the course of 2019, we admittedly skipped a few topics originally
+mentioned on our road map. In particular, the user-visible side of
+Sculpt OS received less attention than originally envisioned. We also
+deferred several ideas we had in mind about reworking our GUI stack.
+Instead, we expanded our work in the areas of storage (block-level APIs,
+test infrastructure,
+[https://genode.org/documentation/release-notes/19.11#Preliminary_block-device_encrypter - block encryption])
+and
+[https://genode.org/documentation/release-notes/19.08#Flexible_keyboard_layouts - input processing].
+This shift of focus is mostly attributed to the priorities of Genode Labs'
+customers who fund our work.
+
+
+2020 - Dwarfing the barrier of entry
+####################################
+
+Genode as a technology is there. For more than one decade, we walked unfathomed
+territory, fought with countless deep rabbit holes, took risky decisions,
+tracked back, explored design spaces, developed taste and distaste, pruned
+technical debt, and eventually found formulas of success. Today, there are no
+(fundamental) unsolved questions. All the puzzle pieces are in place. There
+could be no better proof than our daily use of Sculpt OS. The time is right
+to make Genode palatable for a wider circle. We identified four actionable
+topics to achieve that.
+
+:User friendliness of Sculpt OS:
+
+  Until now, Sculpt OS is not exactly friendly towards users who are
+  unfamiliar with the Unix command-line tools. Since Sculpt is not Unix
+  based, this is a bit paradoxical. 2020 will give Sculpt OS a friendlier
+  and discoverable user experience. In this context, we will inevitably
+  put our attention to Genode's GUI stack.
+
+:Perception of high quality:
+
+  Compared to commodity operating systems who stood the test of time,
+  Genode is a young and largely unproven technology. It understandably calls
+  for skepticism. All the more we must leave no doubts about our high
+  quality standards. There must be no room for uncertainty. Hence, during
+  2020, we will intensify the consolidation and optimization of the framework
+  and its API, and talk about it.
+
+:Enjoyable tooling:
+
+  Genode's success at large will depend on developers. As of today, software
+  development for Genode requires a huge up-front learning curve. This is
+  fine for people who are already convinced of Genode. But it unacceptable
+  for casual developers who want to get their toes wet. We should aim for
+  tooling that allows new developers to keep up their flow and beloved
+  tools. The recently introduced [https://genodians.org/nfeske/2019-11-25-goa - Goa]
+  tooling is our first take in this respect. It is certainly too early to call
+  Goa a success. In order to find out if we are on the right track, we want to
+  expose Goa to as many problems as possible, primarily by the means of
+  porting software. Also, things like IDE usage or adapters for a variety of
+  build systems will certainly move into focus in 2020.
+
+:Convincing use cases:
+
+  Use cases can give exemplary proof of the fitness of Genode. We already
+  took a few baby steps to extend the range of documented use cases beyond
+  Sculpt OS last year. The boot2java scenenario comes in mind. 2020 will
+  hopefully see several more illustrations of Genode's versatility.
+
+
+Apart from this overall theme, we plan to continue our commitment to the
+NXP i.MX SoC family, revisit Genode's low-latency audio support, and
+extend the cultivation of Ada/SPARK within (and on top of) Genode.
+
+
+Milestones for 2020
+###################
+
+In the following, we present a rough schedule of the planned work. As usual,
+it is not set in stone. If you are interested in a particular line of work,
+please get in touch.
+
+
+February - Release 20.02
+========================
+
+* Consolidation: removal of the Noux runtime
+* Library version of the init component
+* Updated audio drivers
+* Sculpt
+  * 64-bit ARM (i.MX8)
+  * Revised administrative user interface
+  * System image without Unix tools
+
+
+May - Release 20.05
+===================
+
+* Updated "Genode Foundations" book
+* Consolidation
+  * Block-level components (update to Genode's modern block APIs)
+  * ARM device drivers (introducing the notion of a platform driver)
+  * Improved STL support (e.g., threading and mutexes)
+  * Continuous POSIX-compliance testing
+  * Systematic network-stack stress and performance tests
+* Desktop: panel and virtual desktops
+* Use case: Genode-based network router
+* Goa: broadened support for 3rd-party build systems
+* Native tool chain, including Git
+* Sculpt
+  * Interactive device management
+  * Keyboard-controlled administration
+* Support for BSPs maintained outside of Genode's mainline repository
+
+
+August - Release 20.08
+======================
+
+* Revisited GUI-related framework interfaces
+* Extended tooling for performance monitoring
+* Goa: Qt development workflow
+* Desktop
+  * Native mail client
+  * Native web browser
+* Sculpt
+  * Configurable CPU resources
+  * On-screen documentation
+  * Block encryption via our
+    [https://genode.org/documentation/release-notes/19.11#Preliminary_block-device_encrypter - consistent block encrypter]
+    implemented in Ada/SPARK
+* USB audio
+* Initial version of a kernel implemented in Ada/SPARK
+
+
+November - Release 20.11
+========================
+
+* Consolidation of capability-space management across kernels
+* CPU-load balancing
+* Hardware-accelerated graphics on i.MX8 (experimental)
+* Reworked audio stack (interfaces, mixing)
+* Sculpt: component lifetime management, shutdown protocol
+* VFS plugins for lwext4 and FUSE-based file systems
+

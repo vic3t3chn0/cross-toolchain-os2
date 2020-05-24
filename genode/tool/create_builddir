@@ -1,0 +1,213 @@
+#!/usr/bin/make -f
+
+#
+# \brief  Prepare Genode build directory
+# \author Christian Helmuth, Norman Feske
+# \date   2008-08-14
+#
+
+MAKEOVERRIDES =
+
+PLATFORM = $(MAKECMDGOALS)
+
+PLATFORMS = arm_v6 arm_v7a arm_v8a riscv x86_32 x86_64 linux
+
+PLATFORMS_DEPR = imx53_qsb imx53_qsb_tz imx6q_sabrelite imx7d_sabre \
+                 nit6_solox pbxa9 riscv_spike rpi \
+                 usb_armory wand_quad zynq_qemu muen
+
+PLATFORM_ALT(imx53_qsb)       = arm_v7a
+PLATFORM_ALT(imx53_qsb_tz)    = arm_v7a
+PLATFORM_ALT(imx6q_sabrelite) = arm_v7a
+PLATFORM_ALT(imx7d_sabre)     = arm_v7a
+PLATFORM_ALT(muen)            = x86_64
+PLATFORM_ALT(nit6_solox)      = arm_v7a
+PLATFORM_ALT(pbxa9)           = arm_v7a
+PLATFORM_ALT(riscv_spike)     = riscv
+PLATFORM_ALT(rpi)             = arm_v6
+PLATFORM_ALT(usb_armory)      = arm_v7a
+PLATFORM_ALT(wand_quad)       = arm_v7a
+PLATFORM_ALT(zynq_qemu)       = arm_v7a
+
+
+usage:
+	@echo
+	@echo "Tool for preparing Genode build directories"
+	@echo
+	@echo "usage:"
+	@echo
+	@echo "  create_builddir <platform> [BUILD_DIR=<build-dir>]"
+	@echo
+	@echo "  <platform>   can be:"
+	@$(foreach PLAT,$(PLATFORMS), \
+	   echo "                  '$(PLAT)'";)
+	@echo
+	@echo "  the following <platform> arguments are deprecated:"
+	@$(foreach PLAT,$(PLATFORMS_DEPR), \
+	   printf "                  %-20s(use '$(PLATFORM_ALT($(PLAT)))')\n" "'$(PLAT)'";)
+	@echo
+	@echo "  The definition of BUILD_DIR is optional. If specified,"
+	@echo "  <build-dir> is the location of the build directory to create."
+	@echo "  If not specified, the build directory will be created at"
+	@echo "  <genode-dir>/build/<platform>."
+	@echo
+
+#
+# Determine Genode base directory based on the known location of the
+# 'create_builddir' tool within the Genode source tree
+#
+GENODE_DIR ?= $(realpath $(dir $(MAKEFILE_LIST))/..)
+
+#
+# Define default location of the build directory if not explicitly specified
+#
+BUILD_DIR ?= $(GENODE_DIR)/build/$(PLATFORM)
+
+#
+# Sanity checks
+#
+ifneq ($(PLATFORM),)
+   #
+   # Check if platform is deprecated or unknown
+   #
+   ifneq ($(filter $(PLATFORM),$(PLATFORMS_DEPR)),)
+      $(info Platform '$(PLATFORM)' is deprecated, use '$(PLATFORM_ALT($(PLATFORM)))' instead)
+   else ifeq ($(filter $(PLATFORM),$(PLATFORMS)),)
+      $(error Bad platform argument '$(PLATFORM)')
+   endif
+
+   #
+   # Check if build directory exists already
+   #
+   ifneq ($(wildcard $(BUILD_DIR)),)
+      $(error Build directory '$(BUILD_DIR)' already exists)
+   endif
+endif
+
+SHELL := bash
+
+
+#
+# Convert GENODE_DIR to an absolute directory because the user
+# may have specified a '~'-relative location or a pwd-relative
+# location.
+#
+GENODE_ABS_DIR := $(realpath $(shell echo $(GENODE_DIR)))
+
+#
+# Define absolute path to the contrib directory as written to the
+# 'etc/build.conf' file. We use 'abs_path' instead of 'realpath' because the
+# contrib directory may not exist when the build directory is created. In this
+# case, 'realpath' would return an empty string.
+#
+ifeq ($(CONTRIB_DIR),)
+CONTRIB_ABS_DIR := $$(GENODE_DIR)/contrib
+else
+CONTRIB_ABS_DIR := $(abspath $(shell echo $(CONTRIB_DIR)))
+endif
+
+$(BUILD_DIR)/etc:
+	@mkdir -p $@
+
+BUILD_CONF_X86      := run_x86 run_boot_dir repos repos_x86
+BUILD_CONF_ARM_V6   := run_arm_v6 run_boot_dir repos
+BUILD_CONF_ARM_V7   := run_arm_v7 run_boot_dir repos
+BUILD_CONF(arm_v6)  := $(BUILD_CONF_ARM_V6)
+BUILD_CONF(arm_v7a) := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(arm_v8a) := run_arm_v8 run_boot_dir repos
+BUILD_CONF(riscv)   := run_riscv run_boot_dir repos
+BUILD_CONF(x86_32)  := run_x86_32 $(BUILD_CONF_X86)
+BUILD_CONF(x86_64)  := run_x86_64 $(BUILD_CONF_X86)
+BUILD_CONF(linux)   := run_kernel_linux repos
+
+# deprecated platforms, to be removed
+BUILD_CONF(imx53_qsb)       := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(imx53_qsb_tz)    := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(imx6q_sabrelite) := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(imx7d_sabre)     := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(nit6_solox)      := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(pbxa9)           := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(rpi)             := $(BUILD_CONF_ARM_V6)
+BUILD_CONF(usb_armory)      := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(wand_quad)       := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(zynq_qemu)       := $(BUILD_CONF_ARM_V7)
+BUILD_CONF(muen)            := run_x86_64 $(BUILD_CONF_X86)
+BUILD_CONF(riscv_spike)     := ${BUILD_CONF(riscv)}
+
+message: $(BUILD_DIR)/etc/build.conf
+$(BUILD_DIR)/etc/build.conf:
+	@echo "GENODE_DIR  := $(GENODE_ABS_DIR)" > $@
+	@echo 'BASE_DIR    := $$(GENODE_DIR)/repos/base' >> $@
+	@echo 'CONTRIB_DIR := $(CONTRIB_ABS_DIR)' >> $@
+ifeq ($(PLATFORM),riscv_spike)
+	@echo "BOARD       := spike" >> $@
+else ifeq ($(PLATFORM),muen)
+	@echo "BOARD       := muen" >> $@
+	@echo "KERNEL      := hw" >> $@
+else ifneq ($(filter $(PLATFORM),$(PLATFORMS_DEPR)),)
+	@echo "BOARD       := $(PLATFORM)" >> $@
+endif
+	@echo >> $@
+	@for i in make_j run; do \
+		cat $(GENODE_DIR)/tool/builddir/build.conf/$$i; done >> $@
+	@for i in ${BUILD_CONF(${PLATFORM})}; do \
+		cat $(GENODE_DIR)/tool/builddir/build.conf/$$i; done >> $@
+
+message: $(BUILD_DIR)/Makefile
+$(BUILD_DIR)/Makefile:
+	@ln -sf $(GENODE_ABS_DIR)/tool/builddir/build.mk $@
+
+$(BUILD_DIR)/etc/build.conf: $(BUILD_DIR)/etc
+$(BUILD_DIR)/etc/specs.conf: $(BUILD_DIR)/etc
+
+#
+# Detect host CPU architecture (needed for creating Linux build directory that
+# matches the host system)
+#
+UNAME_MACHINE := $(shell uname -m)
+
+SPEC_ARCH(i686)   := x86_32
+SPEC_ARCH(x86_64) := x86_64
+SPEC_ARCH(armv6l) := armv_v6
+SPEC_ARCH(armv7l) := armv_v7
+
+HOST_SPEC_ARCH := ${SPEC_ARCH(${UNAME_MACHINE})}
+
+#
+# SPECS definitions
+#
+
+SPECS(arm_v6)          := arm_v6
+SPECS(arm_v7a)         := arm_v7a
+SPECS(arm_v8a)         := arm_v8a
+SPECS(riscv)           := riscv
+SPECS(x86_32)          := x86_32
+SPECS(x86_64)          := x86_64
+SPECS(linux)           := $(HOST_SPEC_ARCH)
+
+# deprecated platforms
+SPECS(rpi)             := arm_v6
+SPECS(imx53_qsb)       := arm_v7a
+SPECS(imx53_qsb_tz)    := arm_v7a
+SPECS(imx6q_sabrelite) := arm_v7a
+SPECS(imx7d_sabre)     := arm_v7a
+SPECS(nit6_solox)      := arm_v7a
+SPECS(pbxa9)           := arm_v7a
+SPECS(usb_armory)      := arm_v7a
+SPECS(wand_quad)       := arm_v7a
+SPECS(zynq_qemu)       := arm_v7a
+SPECS(riscv_spike)     := riscv
+SPECS(muen)            := x86_64
+
+ifneq (${SPECS(${PLATFORM})},)
+message: $(BUILD_DIR)/etc/specs.conf
+$(BUILD_DIR)/etc/specs.conf:
+	@echo "SPECS += ${SPECS(${PLATFORM})}" > $@
+endif
+
+$(PLATFORM): message
+message:
+	@echo "Successfully created build directory at $(BUILD_DIR)."
+	@echo "Please adjust $(BUILD_DIR)/etc/build.conf according to your needs."
+
+.PHONY: $(PLATFORM)

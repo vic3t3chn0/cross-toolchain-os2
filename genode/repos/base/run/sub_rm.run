@@ -1,0 +1,37 @@
+build "core init test/sub_rm"
+
+create_boot_directory
+
+proc local_attach_addr      {} { return "0x70000000" }
+proc attach_twice_forbidden {} { if { [have_spec linux] } { return true } else { return false } }
+proc support_attach_sub_any {} { if { [have_spec linux] } { return false } else { return true } }
+
+append config {
+	<config>
+		<parent-provides>
+			<service name="ROM"/>
+			<service name="CPU"/>
+			<service name="RM"/>
+			<service name="PD"/>
+			<service name="LOG"/>
+		</parent-provides>
+		<default-route>
+			<any-service> <parent/> </any-service>
+		</default-route>
+		<default caps="100"/>
+		<start name="test-sub_rm">
+			<resource name="RAM" quantum="10M"/>
+			<config local_attach_addr="} [local_attach_addr] {"
+			        attach_twice_forbidden="} [attach_twice_forbidden] {"
+			        support_attach_sub_any="} [support_attach_sub_any] {"/>
+		</start>
+	</config>
+}
+
+install_config $config
+
+build_boot_image "core ld.lib.so init test-sub_rm"
+
+append qemu_args "-nographic "
+
+run_genode_until {.*--- end of sub-rm test ---.*} 20

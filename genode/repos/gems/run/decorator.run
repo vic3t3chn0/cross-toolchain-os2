@@ -1,0 +1,178 @@
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_interactive_pkg] \
+                  [depot_user]/src/init \
+                  [depot_user]/src/report_rom \
+                  [depot_user]/src/dynamic_rom \
+                  [depot_user]/src/nitpicker \
+                  [depot_user]/src/libc \
+                  [depot_user]/src/libpng \
+                  [depot_user]/src/zlib
+
+install_config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="CPU"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="LOG"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+	</parent-provides>
+
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+
+	<default caps="100"/>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+
+	<start name="drivers" caps="1000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides>
+			<service name="Input"/> <service name="Framebuffer"/>
+		</provides>
+	</start>
+
+	<start name="report_rom">
+		<resource name="RAM" quantum="2M"/>
+		<provides> <service name="ROM" />
+		           <service name="Report" /> </provides>
+		<config>
+			<policy label="decorator -> pointer" report="nitpicker -> pointer"/>
+		</config>
+	</start>
+
+	<start name="nitpicker">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Nitpicker"/></provides>
+		<config>
+			<report pointer="yes" />
+			<domain name="default" layer="2" content="client" label="no"/>
+			<default-policy domain="default"/>
+		</config>
+	</start>
+
+	<start name="dynamic_rom">
+		<resource name="RAM" quantum="4M"/>
+		<provides><service name="ROM"/></provides>
+		<config verbose="yes">
+			<rom name="window_layout">
+				<inline description="initial state" />
+				<sleep milliseconds="500" />
+				<inline description="open window 1">
+					<window_layout>
+						<window id="1" title="Genode Toolchain"
+						        xpos="100" ypos="50" width="200" height="200"
+						        focused="yes" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="open window 2 behind window 1">
+					<window_layout>
+						<window id="1" title="Genode Toolchain"
+						        xpos="100" ypos="50" width="200" height="200"
+						        focused="yes" />
+						<window id="2" title="Arora (2)"
+						        xpos="170" ypos="150" width="300" height="200" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="open window 3 in front">
+					<window_layout>
+						<window id="3" title="Launchpad"
+						        xpos="210" ypos="250" width="400" height="200" />
+						<window id="1" title="Genode Toolchain"
+						        xpos="100" ypos="50" width="200" height="200"
+						        focused="yes" />
+						<window id="2" title="Arora (2)"
+						        xpos="170" ypos="150" width="300" height="200" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="bring window 1 to front">
+					<window_layout>
+						<window id="1" title="Genode Toolchain"
+						        xpos="100" ypos="50" width="200" height="200"
+						        focused="yes" />
+						<window id="3" title="Launchpad"
+						        xpos="210" ypos="250" width="400" height="200" />
+						<window id="2" title="Arora (2)"
+						        xpos="170" ypos="150" width="300" height="200" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="change title of window 1">
+					<window_layout>
+						<window id="1" title="Genode Toolchain (running)"
+						        xpos="100" ypos="50" width="200" height="200"
+						        focused="yes" />
+						<window id="3" title="Launchpad"
+						        xpos="210" ypos="250" width="400" height="200" />
+						<window id="2" title="Arora (2)"
+						        xpos="170" ypos="150" width="300" height="200" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="change focus to window 3">
+					<window_layout>
+						<window id="1" title="Genode Toolchain (running)"
+						        xpos="100" ypos="50" width="200" height="200" />
+						<window id="3" title="Launchpad"
+						        xpos="210" ypos="250" width="400" height="200"
+						        focused="yes" />
+						<window id="2" title="Arora (2)"
+						        xpos="170" ypos="150" width="300" height="200" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="move window 3">
+					<window_layout>
+						<window id="1" title="Genode Toolchain"
+						        xpos="100" ypos="50" width="200" height="200" />
+						<window id="3" title="Launchpad"
+						        xpos="310" ypos="300" width="500" height="300"
+						        focused="yes" />
+						<window id="2" title="Arora (2)"
+						        xpos="170" ypos="150" width="300" height="200" />
+					</window_layout>
+				</inline>
+				<sleep milliseconds="1000" />
+				<empty />
+				<sleep milliseconds="1000" />
+			</rom>
+		</config>
+	</start>
+
+	<start name="decorator">
+		<resource name="RAM" quantum="4M"/>
+		<route>
+			<service name="ROM" label="pointer">
+				<child name="report_rom" />
+			</service>
+			<service name="ROM" label="window_layout">
+				<child name="dynamic_rom" />
+			</service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+</config>}
+
+build { app/decorator }
+
+build_boot_image { decorator }
+
+run_genode_until forever

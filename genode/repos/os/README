@@ -1,0 +1,2 @@
+This source-code repository contains genuine low-level OS components and
+interfaces of Genode. It solely depends on the framework's base API.

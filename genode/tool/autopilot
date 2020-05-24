@@ -1,0 +1,517 @@
+#!/usr/bin/tclsh
+
+#
+# \brief  Automated exection of test cases
+# \author Norman Feske
+# \date   2011-07-2
+#
+# The autopilot utility automates the process of executing multiple run scripts
+# on different test targets. Each target is a combination of CPU architecture,
+# hardware board, and kernel. For each executed run script, the exit value is
+# checked and the result gets logged to a file.
+#
+
+##
+# Execute 'func' for each command line argument of type 'tag'
+#
+proc foreach_cmdline_arg { tag func } {
+	global argv
+	set re "(\\s|^)-$tag\\s*(\[^\\s\]+)"
+	set args $argv
+	while {[regexp -- $re $args dummy dummy $tag]} {
+		eval $func
+		regsub -- $re $args "" args
+	}
+}
+
+
+##
+# Determine base directory of genode source tree based on the known location of
+# the 'autopilot' tool within the tree
+#
+proc genode_dir { } {
+	global argv0;
+	return [file dirname [file dirname [file normalize $argv0]]]
+}
+
+
+proc default_test_dir { } { global env; return "/tmp/autopilot.$env(USER)" }
+
+
+##
+# Present usage information
+#
+proc help { } {
+
+	set help_text {
+		Automatically execute test cases on different test targets
+
+		  usage: autopilot [-t <target> ...]
+		                   [-p <platform> -k <kernel> ...]
+		                   [-r <run-script> ...]
+		                   [-d <test-dir>] [-j <make-jobs>]
+		                   [-i <info-file-name>]
+		                   [--help] [--cleanup] [--force] [--keep]
+		                   [--stdout] [--skip-clean-rules]
+		                   [--enable-ccache]
+
+		  -t <target>         test target as triple of architecture-board-kernel,
+		                      e.g., arm_v7a-pbxa9-hw
+		  -p <platform>       platform as pair of architecture-board, e.g.,
+		                      x86_64-pc or arm_v8a-rpi3 (must specify -k too)
+		  -k <kernel>         kernel to use on all platforms configured via -p
+		  -r <run-script>     run scenario to test on all configured targets resp.
+		                      platform-kernel pairs
+
+		  --cleanup           remove test directory at exit
+		  --enable-ccache     use ccache instead of plain gcc
+		  --force             replace test directory if it already exists
+		  --keep              keep test directroy if it already exists
+		  --skip-clean-rules  skip cleanall tests, keep build-directory content
+		  --stdout            print test output instead of writing log files
+		  --time-stamp        prepend log output lines with time stamps (requires ts utility)
+
+		  The environment variable RUN_OPT_AUTOPILOT may be set to propagate
+		  custom RUN_OPTs to the run tool executed. In any case autopilot
+		  appends RUN_OPT like follows.
+
+		    RUN_OPT += --autopilot
+		}
+
+	append help_text "\ndefault test directory is [default_test_dir]\n"
+
+	regsub -all {\n\t\t} $help_text "\n" help_text
+
+	puts $help_text
+}
+
+
+##
+# Return true if command-line switch was specified
+#
+proc get_cmd_switch { arg_name } {
+	global argv
+	return [expr [lsearch $argv $arg_name] >= 0]
+}
+
+
+##
+# Remove test directory
+#
+proc wipe_test_dir { } {
+	global test_dir
+	exec rm -rf $test_dir
+}
+
+
+##
+# Remove build artifacts if commanded via the '--cleanup' argument
+#
+proc cleanup { } {
+	if {[get_cmd_switch --cleanup]} {
+		puts "cleaning up $test_dir"
+		wipe_test_dir
+	}
+}
+
+
+##
+# Abort execution with a message and an error code
+#
+proc fail { message error_code } {
+	cleanup
+	puts stderr "Error: $message"
+	exit $error_code
+}
+
+
+##
+# Return build directory used for the specified architecture
+#
+proc build_dir { arch } {
+	global test_dir
+	return [file join $test_dir $arch]
+}
+
+##
+# Return specific parts of target (arch-board-kernel)
+#
+proc get_arch   { target } { return [lindex [split $target "-"] 0] }
+proc get_board  { target } { return [lindex [split $target "-"] 1] }
+proc get_kernel { target } { return [lindex [split $target "-"] 2] }
+
+
+##
+# Return name of log file for test of 'run_script' on target
+#
+proc log_file_name { arch board kernel run_script } {
+	return $arch.$board.$kernel.$run_script.log
+}
+
+##
+# Return path to log file for test of 'run_script' on target
+#
+proc log_file { arch board kernel run_script } {
+	global test_dir
+	return [file join $test_dir [log_file_name $arch $board $kernel $run_script]]
+}
+
+
+##
+# Return file descriptor for writing the log output of test case
+#
+proc log_fd { arch board kernel run_script } {
+
+	# if '--stdout' was specified, don't write log output to files
+	if {[get_cmd_switch --stdout]} { return stdout }
+
+	# create file descriptor of log file on demand
+	global _log_fds
+	if {![info exists _log_fds($arch,$board,$kernel,$run_script)]} {
+		set new_fd [open [log_file $arch $board $kernel $run_script] "WRONLY CREAT TRUNC"]
+		set _log_fds($arch,$board,$kernel,$run_script) $new_fd
+	}
+	return $_log_fds($arch,$board,$kernel,$run_script)
+}
+
+
+##
+# Close file descriptor used for log output of test case
+#
+proc close_log_fd { arch board kernel run_script } {
+	global _log_fds
+	if {[info exists _log_fds($arch,$board,$kernel,$run_script)]} {
+		close $_log_fds($arch,$board,$kernel,$run_script)
+		unset _log_fds($arch,$board,$kernel,$run_script)
+	}
+}
+
+
+##
+# Execute single run script for specified target
+#
+# \return true if run script succeeded
+#
+proc execute_run_script { arch board kernel run_script } {
+
+	set return_value true
+	set fd [log_fd $arch $board $kernel $run_script]
+
+	if {[catch {
+		if {[get_cmd_switch --time-stamp]} {
+			exec make -C [build_dir $arch] [file join run $run_script] BOARD=$board KERNEL=$kernel \
+			  |& ts "\[%F %H:%M:%S\]" >&@ $fd
+		} else {
+			exec make -C [build_dir $arch] [file join run $run_script] BOARD=$board KERNEL=$kernel \
+			  >&@ $fd
+		}
+	}]} {
+		set return_value false
+	}
+
+	close_log_fd $arch $board $kernel $run_script
+	return $return_value
+}
+
+
+##
+# Clean build directory
+#
+# \return list of unexpected files remaining after 'make cleanall'
+#
+proc clean_build_dir { arch board kernel } {
+
+	set fd [log_fd $arch $board $kernel cleanall]
+
+	# make returns the exit code 2 on error
+	if {[catch {
+		exec make -C [build_dir $arch] cleanall BOARD=$board KERNEL=$kernel >@ $fd
+	}] == 2} {
+		close_log_fd $arch $board $kernel cleanall
+		return [list "clean rule terminated abnormally"]
+	}
+	close_log_fd $arch $board $kernel cleanall
+}
+
+
+##
+# Obtain information about residual files in the build directory
+#
+proc build_dir_remainings { arch } {
+
+	set remainings [split [exec sh -c "cd [build_dir $arch]; find . -mindepth 1"] "\n"]
+
+	set unexpected { }
+	foreach r $remainings {
+		if {$r == "./etc"} continue
+		if {$r == "./Makefile"} continue
+		if {[regexp {\.\/etc\/.*} $r dummy]} continue
+		lappend unexpected "unexpected: $r"
+	}
+	return $unexpected
+}
+
+
+proc build_failed_because_of_missing_run_script { arch board kernel run_script } {
+
+	# we cannot inspect any logfile when --stdout was used
+	if {[get_cmd_switch --stdout]} { return 0 }
+
+	# grep log output for the respective error message of the build system
+	if {[catch {
+		exec grep {^\(\[....-..-.. ..:..:..] \)*Error: No run script for} [log_file $arch $board $kernel $run_script]
+	}]} { return 0 }
+	return 1
+}
+
+
+#
+# Collect command-line arguments
+#
+
+set targets { }
+foreach_cmdline_arg t { global targets; lappend targets $t }
+
+set run_scripts { }
+foreach_cmdline_arg r { global run_scripts; lappend run_scripts $r }
+
+set test_dir [default_test_dir]
+foreach_cmdline_arg d { global test_dir; set test_dir $d }
+
+set make_jobs 2
+foreach_cmdline_arg j { global make_jobs; set make_jobs $j }
+
+# present help if explicitly requested
+if {[get_cmd_switch --help]} { help; exit 0 }
+
+#
+# Handle platform-kernel combinations by adding to targets
+#
+set platforms { }
+foreach_cmdline_arg p { global platforms; lappend platforms $p }
+set kernels { }
+foreach_cmdline_arg k { global kernels; lappend kernels $k }
+
+if {![llength $platforms] != ![llength $kernels]} {
+	puts stderr "Error: -p and -k arguments only valid in combination"
+	help
+	exit -1
+} elseif { [llength $platforms] } {
+	foreach p $platforms {
+		foreach k $kernels {
+			lappend targets $p-$k
+		}
+	}
+}
+
+unset platforms kernels
+
+
+# present help if arguments do not suffice
+if {![llength $run_scripts]} {
+	puts stderr "Error: no run script specified"
+	help
+	exit -1
+}
+if {![llength $targets]} {
+	puts stderr "Error: no test targets specified"
+	help
+	exit -1
+}
+set targets [lsort -unique $targets]
+
+# extract unique architectures from targets (for build-directory creation)
+set architectures { }
+foreach target $targets {
+	lappend architectures [get_arch $target]
+}
+set architectures [lsort -unique $architectures]
+
+# print information about the parameters
+puts "genode dir    : [genode_dir]"
+puts "targets       : $targets"
+puts "architectures : $architectures"
+puts "run scripts   : $run_scripts"
+puts "test dir      : $test_dir"
+puts "make -j       : $make_jobs"
+
+
+#
+# We first create all build directory for all architectures to back out early
+# if any error occurs during the creation of build directories due to wrong
+# command-line arguments.
+#
+
+if {[file exists $test_dir] && ![get_cmd_switch --force] &&
+    ![get_cmd_switch --keep]} {
+	puts stderr "Error: test directory $test_dir already exists"
+	exit -3
+}
+
+
+if {[get_cmd_switch --force]} { wipe_test_dir }
+
+
+proc append_run_opt { build_conf } {
+	if {[info exists ::env(RUN_OPT_AUTOPILOT)]} {
+		exec echo "RUN_OPT  =  --include boot_dir/\$(KERNEL)" >> $build_conf
+		exec echo "RUN_OPT += $::env(RUN_OPT_AUTOPILOT)" >> $build_conf
+	}
+
+	exec echo "RUN_OPT += --autopilot" >> $build_conf
+}
+
+
+# create build directories
+foreach arch $architectures {
+
+	set build_dir [build_dir $arch]
+	set build_conf [file join $build_dir etc build.conf]
+
+	if {[get_cmd_switch --keep] && [file exists $build_dir]} {
+		append_run_opt $build_conf
+		continue
+	}
+
+	if {[catch {
+		exec [genode_dir]/tool/create_builddir $arch BUILD_DIR=$build_dir
+	}]} {
+		fail "create_builddir for architecture $arch failed" -1
+	}
+
+	if {![file exists $build_conf]} {
+		fail "build dir for $arch lacks 'etc/build.conf' file" -2
+	}
+
+	# enable all repositories
+	exec sed -i "/^#REPOSITORIES/s/^#//" $build_conf
+
+	# enable parallel build
+	exec echo "MAKE += -j$make_jobs" >> $build_conf
+
+	# optionally enable ccache
+	if {[get_cmd_switch --enable-ccache]} {
+		set tools_conf [file join $build_dir etc tools.conf]
+		exec echo "CUSTOM_CC  = ccache \$(CROSS_DEV_PREFIX)gcc" >> $tools_conf
+		exec echo "CUSTOM_CXX = ccache \$(CROSS_DEV_PREFIX)g++" >> $tools_conf
+	}
+
+	append_run_opt $build_conf
+}
+
+
+#
+# Create info file that contains all expected log files
+#
+
+set info_file "autopilot.log"
+foreach_cmdline_arg i { global info_file; set info_file $i }
+
+set info_fd [open [file join $test_dir $info_file] "WRONLY CREAT TRUNC"]
+foreach t $targets {
+	foreach run_script $run_scripts {
+		puts $info_fd "[log_file_name [get_arch $t] [get_board $t] [get_kernel $t] $run_script]"
+	}
+}
+close $info_fd
+
+
+#
+# Revisit each architecture's build directory and execute all test cases for
+# all specified targets
+#
+
+
+##
+# Print label identifying the specified test case to stderr
+#
+proc print_step_label { board kernel step } {
+	puts -nonewline stderr "[format {%-30s} "$board $kernel:"] [format {%-30s} $step] "
+}
+
+
+##
+# Return string for elapsed time
+#
+proc elapsed_time { time_start time_end } {
+	set total   [expr $time_end - $time_start]
+	set minutes [expr $total / 60]
+	set seconds [expr $total % 60]
+
+	return [format "%d:%02d" $minutes $seconds]
+}
+
+
+# default exit value used if all tests went successfully
+set exit_value 0
+
+
+# execute run scripts
+foreach arch $architectures {
+
+	puts stderr "\n--- architecture $arch ---"
+
+	foreach run_script $run_scripts {
+
+		foreach target $targets {
+			if { [get_arch $target] ne $arch } { continue }
+
+			set board  [get_board $target]
+			set kernel [get_kernel $target]
+
+			print_step_label $board $kernel $run_script
+
+			set time_start [clock seconds]
+			set result [execute_run_script $arch $board $kernel $run_script]
+			set elapsed [elapsed_time $time_start [clock seconds]]
+
+			if {$result} {
+				puts stderr "-> OK ($elapsed)"
+			} else {
+
+				if {[build_failed_because_of_missing_run_script $arch $board $kernel $run_script]} {
+					puts stderr "-> UNAVAILABLE"
+				} else {
+					puts stderr "-> ERROR ($elapsed)"
+					set exit_value -1
+				}
+			}
+		}
+	}
+
+	if {[get_cmd_switch --skip-clean-rules]} continue
+
+	# execute and validate cleanall rule
+	foreach target $targets {
+		if { [get_arch $target] ne $arch } { continue }
+
+		set board  [get_board $target]
+		set kernel [get_kernel $target]
+
+		print_step_label $board $kernel cleanall
+		clean_build_dir $arch $board $kernel
+		puts stderr "-> DONE"
+	}
+
+	set pollution [build_dir_remainings $arch]
+	if {[llength $pollution] == 0} {
+		puts stderr "-> OK"
+	} else {
+		puts stderr "-> ERROR"
+		set exit_value -1
+		foreach p $pollution { puts stderr "      $p" }
+	}
+}
+
+proc concluding_message { } {
+	global exit_value
+
+	if {$exit_value == 0} { return "everything ok" }
+	return "errors occurred"
+}
+
+puts stderr "--- done ([concluding_message]) ---"
+
+cleanup
+
+exit $exit_value

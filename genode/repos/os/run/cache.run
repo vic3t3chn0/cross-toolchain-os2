@@ -1,0 +1,38 @@
+#
+# \brief  Simple cache benchmark
+# \author Johannes Schlatow
+#
+
+
+set build_components { core init test/cache }
+
+build $build_components
+
+create_boot_directory
+
+set config {
+	<config>
+		<parent-provides>
+			<service name="LOG"/>
+			<service name="CPU"/>
+			<service name="PD"/>
+			<service name="ROM"/>
+			<service name="IO_MEM"/>
+		</parent-provides>
+		<default-route>
+			<any-service> <parent/> </any-service>
+		</default-route>
+		<default caps="100"/>
+
+		<start name="test-cache">
+			<resource name="RAM" quantum="64M"/>
+		</start>
+	</config> }
+
+install_config $config
+
+set boot_modules { core ld.lib.so init test-cache }
+
+build_boot_image $boot_modules
+
+run_genode_until "done.*\n" 300

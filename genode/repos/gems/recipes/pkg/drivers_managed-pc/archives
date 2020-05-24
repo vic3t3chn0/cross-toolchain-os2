@@ -1,0 +1,16 @@
+_/src/platform_drv
+_/src/acpi_drv
+_/src/ps2_drv
+_/src/usb_drv
+_/src/usb_block_drv
+_/src/vesa_drv
+_/src/intel_fb_drv
+_/src/boot_fb_drv
+_/src/ahci_drv
+_/src/report_rom
+_/src/input_filter
+_/src/init
+_/src/driver_manager
+_/src/rom_filter
+_/src/rom_reporter
+_/raw/drivers_managed-pc

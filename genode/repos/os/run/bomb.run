@@ -1,0 +1,71 @@
+build "core init test/bomb timer"
+
+set timeout     240
+set rounds      20
+set generations 6
+set children    2
+set sleep       1500
+set demand      [expr 1*1024*1024]
+
+if {[have_include "power_on/qemu"]} {
+	append qemu_args "-nographic "
+} else {
+	# foc is really slow on native hardware executing this test - limit rounds
+	if {[have_spec foc]} {
+		if {[have_spec x86_32]} { set rounds 6 }
+		if {[have_spec x86_64]} { set rounds 6 }
+	}
+}
+
+if {[have_spec pistachio]} {
+	# The bomb test triggers a kernel assertion at kernel/src/api/v4/tcb.h,
+	# line 727, which remains unfixed since the kernel is no longer developed.
+	puts "Run script does not support Pistachio"
+	exit 0
+}
+
+# prevent hitting the socket-descriptor limit on Linux
+if {[have_spec linux]} { set generations 4 }
+
+set config {
+<config prio_levels="2">
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<resource name="RAM" preserve="2M"/>
+	<resource name="CAP" preserve="100"/>
+	<start name="timer" caps="100">
+		<resource name="CPU" quantum="10"/>
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+	<start name="bomb-master" priority="-1" caps="100000">
+		<binary name="bomb"/>
+		<resource name="CPU" quantum="90"/>
+		<resource name="RAM" quantum="2G"/>}
+
+append config "
+		<config rounds=\"$rounds\" generations=\"$generations\"
+		        children=\"$children\" sleep=\"$sleep\" demand=\"$demand\"/>"
+
+append config {
+	</start>
+</config>}
+
+create_boot_directory
+
+install_config $config
+
+build_boot_image "core ld.lib.so init bomb timer"
+
+run_genode_until {.*Done\. Going to sleep.*} $timeout

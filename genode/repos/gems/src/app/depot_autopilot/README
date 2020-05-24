@@ -1,0 +1,428 @@
+The Depot Autopilot can be used to successively evaluate a given set of test
+packages and produce an overview which makes it easy to see the most important
+findings for each test. This is a brief overview of the features thereby
+provided:
+
+* Execute multiple tests in a sub-init successively in a given order
+* Each test can define multiple log patterns and timeouts that render it
+  either failed or succeeded
+* A tests definition and ingredients come in the form of a Genode package
+  archive that gets queried by the Autopilot on demand
+* Forward the log of each test to the log session of the Autopilot prefixed
+  with a timestamp and the test-local label
+* After the last test, print an overview that lists for each test the test
+  result, why this result was assumed, and the test duration
+* Consider that tests might crash the whole system. Thus, the Autopilot
+  provides information on when to consider a system reboot. And it makes it
+  possible to gather all findings from before a system reboot to hand them
+  in at the next run.
+* Consider tests that are "not supported" so the overview tables of different
+  platforms are comparable
+
+
+The Depot Autopilot is accompanied by the Run script
+'repos/gems/run/depot_autopilot.run' which doesn't describe a classical test
+but rather helps integrating the Autopilot into a Linux-based test
+environment. The run script provides the following features:
+
+* Creates a complete Autopilot scenario from a list of local test packages
+* Optional platform dependencies can be defined for each test package
+* Simple interface for selectively using test ingredients built from source
+* Can be combined with a list of source packages and gcov to show test coverage
+* Exits with 0 if all tests are either "ok" or "skipped", otherwise with < 0
+* The target is re-booted if the scenario gets stuck
+* On each re-boot the Autopilot is configured only with the remaining tests
+* Tests that caused a re-boot are listed as "failed" with cause "reboot"
+* The final Autopilot result overview reflects all results from all boots
+* If a complete result overview can't be obtained, a partial one is simulated
+
+
+Depot Autopilot component
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configuration
+-------------
+
+This is an example configuration of the Depot Autopilot:
+
+! <config arch="x86_64" children_label_prefix="dynamic -> " repeat="false">
+!   <static>
+!     <parent-provides>
+!       <service name="ROM"/>
+!       <service name="CPU"/>
+!       ...
+!     </parent-provides>
+!   </static>
+!   <common_routes>
+!     <service name="ROM" label_last="ld.lib.so"> <parent/> </service>
+!     <service name="ROM" label_last="init">      <parent/> </service>
+!     <service name="CPU">                        <parent/> </service>
+!     ...
+!   </common_routes>
+!
+!   <previous-results time_sec="3"
+!                     succeeded="0"
+!                     skipped="1"
+!                     failed="1"> test-rm_fault_no_nox            skipped
+! test-rm_nested                  failed     0.653  log "Error: "</previous-results>
+!
+!   <start name="test-mmio" pkg="genodelabs/pkg/test-mmio/2018-10-30"/>
+!   <start name="test-rtc" skip="true"/>
+!   <start name="test-xml_node" pkg="genodelabs/pkg/test-xml_node/2018-10-30"/>
+!   ...
+! </config>
+
+:<config arch>:
+
+  Defines the architecture that the Autopilot is running on for querying the
+  appropriate variant of the test packages. Must be one of "x86_64", "x86_32",
+  "arm_v7a".
+
+:<config children_label_prefix>:
+
+  Label prefix of LOG sessions of the components of a test. This is required
+  to relate incoming LOG-session request to a running test.
+
+:<config repeat>:
+
+  Can be one of
+
+    "false"         - process the given test list only once,
+    "until_forever" - endlessly repeat processing the given test list,
+    "until_failed"  - repeat processing the given test list until it fails.
+
+:<config><static>:
+
+  Contains Init configuration that shall always be added to the configuration
+  of the target Init that runs the test scenarios. For information about the
+  format of the content of this tag see 'repos/os/src/init/config.xsd'
+
+:<config><common_routes>:
+
+  Contains a routing configuration like in a <route> tag of an Init <start>
+  node that shall be added to the routing configuration of the runtime-Init
+  of each test.
+
+:<config><previous-results>:
+
+  Contains a string that shall preceed the overview table. Each line of the
+  string is expected to have the format:
+  " $NAME  $SEC.$MS  $RESULT  $ADDITIONAL_INFO" where $NAME is the name of the
+  test package right-padded with whitespaces to a size of 32, $SEC are the
+  seconds of the test duration left-padded with whitespaces to a size of 3,
+  $MS are the milliseconds of the test duration left-padded with zeros to a
+  size of 3, $RESULT is one of "ok", "failed", "skipped" right-padded with
+  whitespaces to a size of 7, and $ADDITIONAL_INFO is an arbitrary string.
+  This format is the same as in the result line printed out by the Autopilot
+  after each single test. The string is taken as is and should not contain '<'
+  or additional tabulators, whitespaces or newlines. It is suggested that all
+  occurences of '<' are replaced with "&lt;", so, they can be sanitized in the
+  future.
+
+:<config><previous-results time_sec>:
+
+  Contains a time in seconds that shall be added to the total time shown in
+  header of the overview.
+
+:<config><previous-results succeeded>:
+:<config><previous-results failed>:
+:<config><previous-results skipped>:
+
+  A non-negative number that denotes how many tests are already
+  succeeded/failed/skipped. The number is added to the number of
+  succeeded/failed/skipped tests in the result overview.
+
+:<config><start>:
+
+  Each <start> node stands for a test that shall be evaluated by the Autopilot.
+  The tests are evaluated in the order that the start nodes state. Also the
+  result overview is ordered this way.
+
+:<config><start name>:
+
+  This string is used to identify the test in the log output of the Autopilot
+  and to name the runtime component of the test. It should be unique amongst
+  all <start> nodes.
+
+:<config><start pkg>:
+
+  Defines the Genode package path of the test package in the format
+  "$DEPOT_USER/pkg/$NAME/$VERSION".
+
+:<config><start skip>:
+
+  A boolean value. Its default value is false. If set to true, the test is not
+  evaluated at all, no package or "pkg" attribute is needed. The test only
+  appears in the overview with the result "skipped".
+
+
+Format of test packages
+-----------------------
+
+Besides the mandatory package content, a test package is expected to provide a
+'runtime' file. This is an example runtime file:
+
+! <runtime ram="32M" caps="1000" binary="init">
+!
+! 	<requires> <timer/> <nic/> </requires>
+!
+! 	<events>
+! 		<timeout meaning="failed" sec="20" />
+! 		<log meaning="succeeded">Ignores		tabs	
+! 			and newlines but      no whitespaces      !
+! 			Some XML: &lt;my-node my_attr="123"/>
+! 			[init -> test-example] Wildcarded *text *literal star &#42; ampersand &amp;
+! 		</log>
+! 	</events>
+!
+! 	<content>
+! 		<rom label="ld.lib.so"/> <rom label="test-example"/>
+! 	</content>
+!
+! 	<config>
+! 		<parent-provides>
+! 			...
+! 		</parent-provides>
+! 		<default-route>
+! 			...
+! 		</default-route>
+! 		<default caps="100"/>
+! 		<start name="test-example" caps="500">
+! 			<resource name="RAM" quantum="10M"/>
+! 		</start>
+! 	</config>
+! </runtime>
+
+:<runtime ram>:
+
+  Amount of RAM quota that is donated to the tests root component.
+
+:<runtime caps>:
+
+  Amount of CAP quota that is donated to the tests root component.
+
+:<runtime binary>:
+
+  Name of the binary of the tests root component.
+
+:<requires>:
+
+  Not examined yet. Should contain a sub-node for every individual resource
+  that the test expects to be provided by the world outside its sub-tree. This
+  exists mainly for the annotation of required drivers. Normally, drivers
+  should not be part of a test sub-tree as we don't want to get into the
+  situation of restarting them.
+
+:<events>:
+
+  Lists events that may occur during the test and that shall imply a reaction
+  by the Autopilot.
+
+:<events><timeout sec>:
+
+  This event occurs when the test execution lasts the given time in seconds.
+
+:<events><timeout meaning>:
+
+  One of "succeeded", "failed". Both imply the test to be treated as finished
+  (gets terminated) with the test result set to the given value.
+
+:<events><log>:
+
+  Contains a string pattern. The event occurs as soon as the pattern could be
+  completely matched against the LOG-session output of the test. Tabs and
+  newlines are ignored in the pattern as well as in the test output. Literal
+  characters '<', '&', '*' in the pattern must be escaped as "&lt;", "&amp;",
+  "&#42;". A character '*' in the pattern is treated as non-greedy wildcard.
+
+:<events><log meaning>:
+
+  See <events><timeout meaning>.
+
+:<content>:
+
+  Lists required files from the test-package build besides the root-component
+  binary.
+
+:<content><rom label>:
+
+  Requirement for a file with the given name.
+
+:<config>:
+
+  Contains the configuration for the tests root component.
+
+
+Integration
+-----------
+
+:Required sessions:
+
+* A Timer session for realizing timeout events stated in the test
+  runtime-files and providing timing information in the LOG output.
+
+* A Report session labeled "query". Through this report, the Depot Autopilot
+  requests the blueprint for the test-package required next. This is an
+  example content of this report:
+
+  ! <query arch="x86_64">
+  !   <blueprint pkg="genodelabs/pkg/test-spark/2018-11-02"/>
+  ! </query>
+
+  The format is compliant to that of the "query" ROM required by the Depot
+  Query component in 'repos/gems/src/app/depot_query'.
+
+* A ROM session labeled "blueprint". The blueprint ROM is expected to contain
+  the information requested via the above stated "query" Report. It may look
+  like this:
+
+  ! <blueprint>
+  !   <pkg name="test-spark" path="genodelabs/pkg/test-spark/2018-11-02">
+  !     <rom label="spark.lib.so" path="genodelabs/bin/x86_64/spark/2018-11-01/spark.lib.so"/>
+  !     <missing_rom label="ld.lib.so"/>
+  !     ... # further <rom> and <missing_rom> tags
+  !
+  !     <runtime ram="32M" caps="1000" binary="init">
+  !       ... # content of the tests runtime file
+  !     </runtime>
+  !   </pkg>
+  ! </blueprint>
+
+  The format is compliant to that of the "blueprint" Report provided by the
+  Depot Query component in 'repos/gems/src/app/depot_query'.
+
+* A Report session labeled "init.config". Through this report a configuration
+  for an Init component is provided in a way that it serves as parent for the
+  root components of the tests. It may look like this:
+
+  ! <config>
+  !   ... # content of <static> tag in Autopilot configuration
+  !
+  !   <start name="test-spark" caps="1000">
+  !     <binary name="init"/>
+  !     <resource name="RAM" quantum="32M"/>
+  !
+  !     <config ...> ... <config> # from the tests runtime file
+  !
+  !     <route>
+  !       ... # content of <common_routes> tag in Autopilot configuration
+  !
+  !       # routes for each <content><rom> tags in the tests runtime file
+  !       <service name="ROM" label_last="test-spark">
+  !         <parent label="genodelabs/bin/x86_64/test-spark/2018-11-02/test-spark"/>
+  !       </service>
+  !       ...
+  !
+  !     </route>
+  !   </start>
+  ! </config>
+
+:Provided services:
+
+* A LOG service for matching LOG-event patterns stated in the test runtime-
+  files against the LOG output of the test components. Thus, you should take
+  care that all LOG session requests of test components are routed to the
+  Depot Autopilot. You can still receive the whole LOG output of the test
+  components as part of the LOG output of the Depot Autopilot.
+
+
+Depot Autopilot Run script
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, the Run script tries to evaluate all tests that are internally
+configured, that is, normally, all that are available as package recipes in
+the main repositories. This includes one test that is prepared for the later
+examination by gcov as well as gcov itself, which is executed like a test at
+the end of the test list to examine the above mentioned adapted test. The test
+list is processed only once and all test ingredients are used from packages,
+assuming the depot user is 'genodelabs'. For this default behavior just call
+the script like any "normal" Run script:
+
+! make run/depot_autopilot KERNEL="nova"
+
+However, this is normally a pretty time intensive process and meant for the
+integration into automatic test infrastructures rather than manual evaluation.
+This is why you might want to adapt the scenario, for instance, for debugging
+one or more tests that failed during your automated testing. For this purpose,
+a user interface is given through specific environment variables. This is an
+example containing all of these variables:
+
+! make run/depot_autopilot \
+! > TEST_PKGS="test-libc_vfs test-log" \
+! > TEST_SRCS="test-xml_generator test-xml_node" \
+! > TEST_BUILDS="server/vfs test/libc_vfs" \
+! > TEST_MODULES="vfs test-libc_vfs vfs.lib.so" \
+! > TEST_REPEAT="until_failed" \
+! > KERNEL="nova"
+
+:TEST_PKGS:
+
+  List of test package-archives that supersedes the internal default list if
+  set to a value other than "default".
+
+:TEST_SRCS:
+
+  List of test source-archives that supersedes the internal default list if
+  set to a value other than "default".
+
+:TEST_BUILDS:
+
+  List of test build-targets that be build from the local repositories.
+
+:TEST_MODULES:
+
+  List of test boot-modules that overlay the contents of the package-archives.
+
+:TEST_REPEAT:
+
+  See the <config repeat> attribute of the Depot Autopilot.
+
+To get a hint which build components (TEST_BUILDS) and which boot modules
+(TEST_MODULES) you may want to enter for a given test package, you may have
+a look at the package recipe:
+
+! repos/<REPO>/recipes/pkg/<TEST_PKG>/archives
+! repos/<REPO>/recipes/pkg/<TEST_PKG>/runtime (<content> tag)
+
+There are two additional features that are rather intended for automated test
+infrastructures. One is the determination of the number of missing tests and
+the other is the less interactive mode. The number of missing tests is the
+number of tests that should have been executed on a platform (not skipped) but
+for which the run script couldn't manage to produce a result. This can happen
+if the hardware runs into unrecoverable problems during testing or if the
+script is called with the less interactive mode (as explained later in more
+detail).
+
+As an example let's say we have 72 tests in total and 8 of them get skipped
+because of incompatibility with the current platform. Then, the number of
+executed tests is 64. Let's assume the run script finishes with 35 tests
+succeeded and 19 tests failed, the number of missing tests is consequently 64 -
+35 - 19 = 10. This calculation can be done automated by summing up the values
+'succeeded' and 'failed' from the results overview and subtracting it from the
+value given in the line "Number of tests to run" that is printed out by the run
+script at the very beginning. Missing tests normally indicate problems with the
+target platform or the testing infrastructure itself.
+
+Now to the less interactive mode: This is a mode in which the run script
+doesn't give up (as usual) when there are test archives missing in the host
+depot. Instead it solves the conflict by removing the affected test packages or
+test sources. If a test package gets removed this way, the corresponding test
+is neither executed nor considered in the result overview (unlike skipped
+tests). Thus, it is a missing test and can be detected as described above. You
+can determine whether a missing test is missing due to unmet archive
+dependencies by inspecting the serial ouput of the run script. For each
+incomplete package or source archive of a test, the run script yields a
+warning:
+
+! Warning: remove test [package|source] of "<TEST_NAME>" because of missing
+           archives
+
+The less interactive mode can be activated by appending " --autopilot " to the
+'RUN_OPT' variable in your '<BUILD_DIR>/etc/build.conf' file.
+
+
+Examples
+--------
+
+Please see the run script 'repos/gems/run/depot_autopilot.run' for a
+comprehensive example of how to use the Depot Autopilot.

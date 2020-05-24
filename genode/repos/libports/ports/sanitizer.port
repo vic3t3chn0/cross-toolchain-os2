@@ -1,0 +1,15 @@
+LICENSE   := LGPL
+VERSION   := 8.3.0
+DOWNLOADS := sanitizer.archive
+
+URL(sanitizer) := ftp://ftp.fu-berlin.de/gnu/gcc/gcc-$(VERSION)/gcc-$(VERSION).tar.xz
+SHA(sanitizer) := 64baadfe6cc0f4947a84cb12d7f0dfaf45bb58b7e92461639596c21e02d97d2c
+DIR(sanitizer) := src/lib/sanitizer
+SIG(sanitizer) := ${URL(gcc)}
+KEY(sanitizer) := GNU
+
+TAR_OPT(sanitizer) := gcc-$(VERSION)/libsanitizer \
+                      --strip-components=2
+
+PATCHES   := src/lib/sanitizer/*.patch
+PATCH_OPT := -p1 -d src/lib/sanitizer

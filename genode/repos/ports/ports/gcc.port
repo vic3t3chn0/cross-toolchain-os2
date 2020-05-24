@@ -1,0 +1,31 @@
+LICENSE   := GPLv3
+VERSION   := 8.3.0
+DOWNLOADS := gcc.archive
+
+URL(gcc)  := ftp://ftp.fu-berlin.de/gnu/gcc/gcc-$(VERSION)/gcc-$(VERSION).tar.xz
+SHA(gcc)  := 64baadfe6cc0f4947a84cb12d7f0dfaf45bb58b7e92461639596c21e02d97d2c
+SIG(gcc)  := ${URL(gcc)}.sig
+KEY(gcc)  := GNU
+DIR(gcc)  := src/noux-pkg/gcc
+
+PATCHES   := $(addprefix ${DIR(gcc)}/patches/, \
+                         $(shell cat $(REP_DIR)/${DIR(gcc)}/patches/series))
+PATCH_OPT := -p1 -d ${DIR(gcc)}
+
+HASH_INPUT += $(REP_DIR)/${DIR(gcc)}/patches/series
+
+AUTOCONF := autoconf2.64
+
+$(call check_tool,$(AUTOCONF))
+$(call check_tool,autogen)
+
+default: _patch
+	@#
+	@# Re-generate configure scripts
+	@#
+	$(VERBOSE)cd ${DIR(gcc)}; autogen Makefile.def
+	$(VERBOSE)cd ${DIR(gcc)}/libgcc; $(AUTOCONF)
+	$(VERBOSE)cd ${DIR(gcc)}/libstdc++-v3; $(AUTOCONF)
+	$(VERBOSE)cd ${DIR(gcc)}/gcc; $(AUTOCONF)
+	$(VERBOSE)cd ${DIR(gcc)}; $(AUTOCONF)
+	$(VERBOSE)touch $@

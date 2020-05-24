@@ -1,0 +1,423 @@
+
+                 =======================================
+                 Future Challenges of the Genode project
+                 =======================================
+
+
+Abstract
+########
+
+This document compiles various ideas to pursue in the context of Genode. It is
+meant as source of inspiration for individuals who are interested in getting
+involved with the project and for students who want to base their student
+research projects on Genode.
+
+
+Applications and library infrastructure
+#######################################
+
+:VNC server implementing Genode's framebuffer session interface:
+
+  With 'Input' and 'Framebuffer', Genode provides two low-level interfaces
+  used by interactive applications. For example, the Nitpicker GUI server uses
+  these interfaces as a client and, in turn, exports multiple virtual
+  'Framebuffer' and 'Input' interfaces to its clients. This enables a
+  highly modular use of applications such as the nesting of GUIs. By
+  implementing the 'Framebuffer' and 'Input' interfaces with a VNC server
+  implementation, all graphical workloads of Genode would become available over
+  the network. One immediate application of this implementation is the remote
+  testing of graphical Genode applications running on a headless server.
+
+:Interfacing with the SAFE network:
+
+  The [https://safenetwork.org/ - SAFE network] is an attempt to fix many
+  shortcomings of the internet - in particular with respect to privacy and
+  freedom - at an architectural level. It is a peer-to-peer communication
+  and storage network that does not depend on single point of
+  failure or control. It is intriguing to explore the opportunity of
+  integrating support for the SAFE network not merely as an application but
+  integrated in the operating system, i.e., in the form of Genode components
+  or a set of Genode VFS plugins.
+
+:Interactive sound switchbox based on Genode's Audio_out session interface:
+
+  Since version 10.05, Genode features a highly flexible configuration concept
+  that allows the arbitrary routing of session requests throughout the
+  hierarchic process structure. Even though primarily designed for expressing
+  mandatory-access control rules, the concept scales far beyond this use case.
+  For example, it can be used to run an arbitrary number of processes
+  implementing the same interface and connecting the different interface
+  implementations. One special case of this scenario is a chain of audio
+  filters with each using the 'Audio_out' session interface for both roles
+  client and server. Combined with the Nitpicker GUI server and Genode's
+  support for real-time priorities, this base techniques enable the creation of
+  flexible audio mixer / switchboard applications, which require dedicated
+  frameworks (e.g., Jack audio) on traditional operating systems. The goal of
+  this project is to create a showcase implementation demonstrating the
+  feasibility for creating high-quality audio applications on Genode.
+  Furthermore, we wish for feedback regarding the current design of our bulk
+  streaming interface when used for low-latency applications.
+
+:Graphical on-target IPC tracing tool using Qt:
+
+  Analysing the interaction of components of a multi-server operating system
+  such as Genode is important to discover bottlenecks of the system and for
+  debugging highly complex usage scenarios involving many processes. Currently,
+  Genode handles this problem with two approaches. First, Genode's
+  recursive structure enables the integration of a subsystem in a basic
+  OS setup featuring only those drivers and components used for the particular
+  subsystem. After the successful integration of such a subsystem, it can
+  be embedded into a far more complex application scenario without any changes.
+  With this approach, the subject to analyse can be kept at a reasonable level
+  at integration time. For debugging purposes, the current approach is using
+  the debugging facilities of the respective base platforms (e.g., using
+  GDB on Linux, the Fiasco kernel debugger, the OKL4 kernel debugger).
+
+  However, in many cases, bottlenecks do not occur when integrating individual
+  sub systems but after integrating multiple of such subsystems into a large
+  application scenario. For such scenarios, existing debugging methodologies do
+  not scale. A tool is desired that is able to capture the relationships
+  between processes of a potentially large process hierarchy, to display
+  communication and control flows between those processes, and to visualize the
+  interaction of threads with the kernel's scheduler.
+
+  Since Qt is available natively on Genode, the creation of both offline and
+  on-target analysis tools has become feasible. The first step of this project
+  is creating an interactive on-target tool, that displays the interaction
+  of communicating threads as captured on the running system. The tool should
+  work on a selected kernel that provides a facility for tracing IPC messages.
+
+  The underlying light-weight tracing infrastructure is
+  [https://genode.org/documentation/release-notes/19.08#Tracinghttps://genode.org/documentation/release-notes/19.08#Tracing - already in place].
+  The Qt-based tracing tools would complement this infrastructure with
+  an interactive front end.
+
+:Ports of popular software:
+
+  Genode features a ports mechanism to cleanly integrate 3rd-party software.
+  Thanks to the C runtime, the flexible per-component VFS, the standard
+  C++ library, and the Noux runtime (for UNIX software), porting software
+  to Genode is relatively straight forward. The
+  [http://genode.org/documentation/developer-resources/porting - porting guide]
+  explains the typical steps. A wish list of software that we'd like to
+  have available on Genode is available at
+  [http://usr.sysret.de/jws/genode/porting_wishlist.html].
+
+:Native Open-Street-Maps (OSM) client:
+
+  When using Sculpt OS, we regularly need to spawn a fully fledged web
+  browser in a virtual machine for using OSM or Google maps. The goal
+  of this project would be a native component that makes maps functionality
+  directly available on Genode, alleviating the urge to reach for a SaaS
+  product. The work would include a review of existing OSM clients regarding
+  their feature sets and the feasibility of porting them to Genode.
+  Depending on the outcome of this review, an existing application could
+  be ported or a new component could be developed, e.g., leveraging Genode's
+  Qt support.
+
+
+Application frameworks and runtime environments
+###############################################
+
+:OpenJDK:
+
+  [http://openjdk.java.net/ - OpenJDK] is the reference implementation of the
+  Java programming language and hosts an enormous ecosystem of application
+  software.
+
+  Since
+  [https://genode.org/documentation/release-notes/19.02#Showcase_of_a_Java-based_network_appliance - version 19.02], 
+  Genode features a port of OpenJDK that allows the use of Java for networking
+  applications.
+
+  The next step would be the creation of Genode-specific native classes that
+  bridge the gap between the Java world and Genode, in particular the glue
+  code to run graphical applications as clients of Genode's GUI server. Since
+  OpenJDK has been ported to numerous platforms (such as Haiku), there exists
+  a comforting number of implementations that can be taken as reference.
+
+:Android's ART VM natively on Genode:
+
+  ART is a Java virtual machine that is used for executing applications on
+  Android. By running ART directly on Genode, the Linux kernel could be
+  removed from the trusted computing base of Android, facilitating the use of
+  this mobile OS in high-assurance settings.
+
+:Go language runtime:
+
+  Go is a popular language in particular for web applications. In the past,
+  there were numerous attempts to make the Go runtime available on Genode
+  but so far, none of those undertakings have landed in the official
+  Genode source tree. To goal of this project is the hosting of
+  Go-written applications - in particular networking applications - as
+  Genode components. The topic comprises work on the tool-chain
+  and build-system integration, the porting the runtime libraries, and
+  the glue between the Go and Genode environments.
+
+:Combination of CAmkES with Genode:
+
+  [https://wiki.sel4.systems/CAmkES - CAmkES] is a component framework for
+  seL4. In contrast to Genode, which is a dynamic system, CAmkES-based systems
+  are defined at design time and remain fixed at runtime. Hence, CAmkES and
+  Genode can be seen as the opposite ends of component-based used-land
+  architectures. The goal of this project is to build a bridge between
+  both projects with the potential to cross-pollinate the respective communities.
+  Among the principal approaches are embedding of a single CAmkES
+  component as a Genode component (e.g., an individual device driver),
+  the hosting of a dynamic Genode system as a component within a
+  CAmkES system, or the hosting of a CAmkES system composition as a Genode
+  subsystem.
+
+:Runtime for the D programming language:
+
+  The D systems programming language was designed to overcome many gripes that
+  exists with C++. In particular, it introduces a sane syntax for meta
+  programming, supports unit tests, and contract-based programming. These
+  features make D a compelling language to explore when implementing OS
+  components. Even though D is a compiled language, it comes with a runtime
+  providing support for exception handling and garbage collection. The goal of
+  the project is to explore the use of D for Genode programs, porting the
+  runtime to Genode, adapting the Genode build system to accommodate D
+  programs, and interfacing D programs with other Genode components written in
+  C++.
+
+:Using Haskell as systems-development language:
+
+  The goal of this project is the application of functional programming
+  i.e., Haskell, for the implementation of low-level Genode components.
+  Implementing critical functionalities in such a high-level language instead
+  of a classical systems language such as C or C++ would pave the way towards
+  analyzing such components with formal methods.
+
+  The use of Haskell for systems development was pioneered by the
+  [http://programatica.cs.pdx.edu/House/ - House Project]. A more recent
+  development is [http://halvm.org - HalVM] - a light-weight OS runtime for
+  Xen that is based on Haskell.
+
+:Xlib compatibility:
+
+  Developments like Wayland notwithstanding, most application software on
+  GNU/Linux systems is built on top of the Xlib programming interface.
+  However, only a few parts of this wide interface are actually used today.
+  I.e., modern applications generally deal with pixel buffers instead of
+  relying on graphical drawing primitives of the X protocol. Hence, it seems
+  feasible to reimplement the most important parts of the Xlib interface to
+  target Genode's native GUI interfaces (nitpicker) directly. This would
+  allow us to port popular application software to Sculpt OS without
+  changing the application code.
+
+:Bump-in-the-wire components for visualizing session interfaces:
+
+  Genode's session interfaces bear the potential for monitoring and
+  visualizing their use by plugging a graphical application
+  in-between any two components. For example, by intercepting block
+  requests issued by a block-session client to a block-device driver,
+  such a bump-in-the-wire component could visualize
+  the access patterns of a block device. Similar ideas could be pursued for
+  other session interfaces, like the audio-out (sound visualization) or NIC
+  session (live visualization of network communication).
+
+  The visualization of system behavior would offer valuable insights,
+  e.g., new opportunities for optimization. But more importantly, they
+  would be extremely fun to play with.
+
+
+Virtualization
+##############
+
+:VirtualBox on top of KVM on Linux:
+
+  Genode's version of VirtualBox replaces the original in-kernel VirtualBox
+  hypervisor by the virtualization mechanism of the NOVA hypervisor or the
+  Muen separation kernel. Those mechanisms look very similar the KVM
+  interface of the Linux kernel. It should in principle be possible to
+  re-target Genode's version of VirtualBox to KVM. This way, VirtualBox and
+  Qemu/KVM-based virtual machines could co-exist on the same system, which
+  is normally not possible. Also, complex Genode scenarios (like Turmvilla)
+  could be prototyped on GNU/Linux.
+
+:Xen as kernel for Genode:
+
+  Using Xen as kernel for Genode would clear the way to remove the
+  overly complex Linux OS from the trusted computing base of Xen
+  guests OSes.
+
+  Xen is a hypervisor that can host multiple virtual machines on one physical
+  machine. For driving physical devices and for virtual-machine management, Xen
+  relies on a privileged guest OS called Dom0. Currently, Linux is the
+  predominant choice to be used as Dom0, which implicates a trusted computing
+  base of millions of lines of code for the other guest OSes.
+
+  Even though Xen was designed as hypervisor, a thorough analysis done by Julian
+  Stecklina concludes that Xen qualifies well as a kernel for Genode. For
+  example, Julian implemented a version of Genode's IPC framework that utilizes
+  Xen's communication mechanisms (event channels and shared memory).
+
+:Genode as virtualization layer for Qubes OS:
+
+  [https://www.qubes-os.org/ - Qubes OS] is a desktop operating system
+  that follows the principle of security through compartmentalization.
+  In spirit, it is closely related to Genode. In contrast Genode's
+  clean-slate approach of building a fine-grained multi-component system,
+  Qubes employs Xen-based virtual machines as sandboxing mechanism. In
+  [https://blog.invisiblethings.org/2015/10/01/qubes-30.html - version 3.0],
+  Qubes introduced a Hypervisor Abstraction Layer, which decouples Qubes
+  from the underlying virtualization platform. This exploration project
+  pursues the goal of replacing Xen by Genode as virtualization layer
+  for Qubes.
+
+:Qemu:
+
+  As we use Qemu as primary testing platform for most of the kernels, a port
+  of Qemu to Genode is needed in order to move our regular work flows to
+  Genode as development platform. The basic prerequisites namely libSDL and a
+  C runtime are already available such that this porting work seems to be
+  feasible. In our context, the ia32, amd64, and ARM platforms are of most
+  interest. Note that the project does not have the immediate goal of
+  using hardware-based virtualization. However, if there is interest,
+  the project bears the opportunity to explore the provisioning of the
+  KVM interface based on Genode's VFS plugin concept.
+
+:Hardware-accelerated graphics for virtual machines:
+
+  In
+  [https://genode.org/documentation/release-notes/17.08#Hardware-accelerated_graphics_for_Intel_Gen-8_GPUs - Genode 17.08],
+  we introduced a GPU multiplexer for Intel Broadwell along with support
+  for Mesa-based 3D-accelerated applications.
+  While designing Genode's GPU-session interface, we also aimed at supporting
+  the hardware-accelerated graphics for Genode's virtual machine monitors like
+  VirtualBox or Seoul, but until now, we did not took the practical steps of
+  implementing a virtual GPU device model.
+
+  The goal of this project is the offering of a virtual GPU to a Linux guest
+  OS running on top of Genode's existing virtualization and driver
+  infrastructure.
+
+
+Device drivers
+##############
+
+:Sound on the Raspberry Pi:
+
+  The goal of this project is a component that uses the Raspberry Pi's
+  PWM device to implement Genode's audio-out-session interface. Since
+  Genode's version of libSDL already supports this interface as audio
+  backend, the new driver will make the sound of all SDL-based games
+  available on the Raspberry Pi.
+
+:Data Plane Development Kit (DPDK):
+
+  Genode utilizes the network device drivers of the iPXE project, which
+  perform reasonably well for everyday use cases but are obviously not
+  designated for high-performance networking.
+  The [http://dpdk.org/ - DPDK] is a vendor-supported suite of network device
+  drivers that is specifically developed for high-performance applications.
+  It presents an attractive alternative to iPXE-based drivers. This project
+  has the goal to make DPDK drivers available as a Genode component.
+
+
+Platforms
+#########
+
+:Microkernelizing Linux:
+
+  Thanks to Genode's generic interfaces for I/O access as provided by core, all
+  Genode device drivers including drivers ported from Linux and gPXE can be
+  executed as user-level components on all supported microkernels. However, so
+  far, we have not enabled the use of these device drivers on Linux as base
+  platform. The goal of this project is the systematic replacement of in-kernel
+  Linux device drivers by Genode processes running in user space, effectively
+  reducing the Linux kernel to a runtime for Genode's core process. But moving
+  drivers to Genode processes is just the beginning. By employing further
+  Genode functionality such as its native GUI, lwIP, and Noux, many protocol
+  stacks can effectively be removed from the Linux kernel.
+
+  In 2018, Johannes Kliemann pursued this topic to a state where Genode
+  could be used as init process atop a customized Linux kernel.
+  [https://lists.genode.org/pipermail/users/2018-May/006066.html - His work]
+  included the execution of Genode's regular device drivers for VESA and
+  PS/2 as regular Genode components so that Genode's interactive demo
+  scenario ran happily on a laptop. At this time, however, only parts of
+  his results were merged into Genode's mainline.
+
+  The goal of this project is to follow up on Johannes' work, bring the
+  [https://github.com/genodelabs/genode/pull/2829 - remaining parts] into
+  shape for the inclusion into Genode, and address outstanding topics, in
+  particular the handling of DMA by user-level device drivers. Further down
+  the road, it would be tempting to explore the use of
+  [https://en.wikipedia.org/wiki/Seccomp - seccomp] as sandboxing mechanism
+  for Genode on Linux and the improvement of the Linux-specific implementation
+  of Genode's object-capability model.
+
+:Support for the HelenOS/SPARTAN kernel:
+
+  [http://www.helenos.org - HelenOS] is a microkernel-based multi-server OS
+  developed at the university of Prague. It is based on the SPARTAN microkernel,
+  which runs on a wide variety of CPU architectures including Sparc, MIPS, and
+  PowerPC. This broad platform support makes SPARTAN an interesting kernel to
+  look at alone. But a further motivation is the fact that SPARTAN does not
+  follow the classical L4 road, providing a kernel API that comes with an own
+  terminology and different kernel primitives. This makes the mapping of
+  SPARTAN's kernel API to Genode a challenging endeavour and would provide us
+  with feedback regarding the universality of Genode's internal interfaces.
+  Finally, this project has the potential to ignite a further collaboration
+  between the HelenOS and Genode communities.
+
+:Support for the XNU kernel (Darwin):
+
+  XNU is the kernel used by Darwin and Mac OS X. It is derived from the
+  MACH microkernel and extended with a UNIX-like syscall API. Because the
+  kernel is used for Mac OS X, it could represent an industry-strength
+  base platform for Genode supporting all CPU features as used by Mac OS X.
+
+:Genode on the Librem5 phone hardware:
+
+  Even though there exists a great variety of ARM-based SoCs, Genode
+  primarily focuses on the NXP i.MX family because it is - in contrast
+  to most SoCs in the consumer space - very liberal in terms of
+  good-quality public documentation and reference code, and it scales
+  from industrial to end-user-facing use cases (multi-media).
+
+  The [https://puri.sm/products/librem-5/ - Librem5] project - with its
+  mission to build a trustworthy mobile phone - has chosen the i.MX family as
+  the basis for their product for likely the same reasons that attract us.
+
+  To goal of this work is bringing Genode to the Librem5 hardware.
+  For the Librem5 project, Genode could pave the ground towards new use cases
+  like high-security markets where a regular Linux-based OS would not be
+  accepted. For the Genode community, the Librem5 hardware could become an
+  attractive mobile platform for everyday use, similar to how we developers
+  use our Genode-based [https://genode.org/download/sculpt - Sculpt OS] on our
+  laptops.
+
+
+System management
+#################
+
+:Remote management of Sculpt OS via Puppet:
+
+  [https://en.wikipedia.org/wiki/Puppet_(company)#Puppet - Puppet] is a
+  software-configuration management tool for administering a large amount
+  of machines from one central place. Genode's
+  [https://genode.org/download/sculpt - Sculpt OS] lends itself to such
+  an approach of remote configuration management by the means of the
+  "config" file system (for configuring components and deployments) and
+  the "report" file system (for obtaining the runtime state of components).
+  The project would explore the application of the Puppet approach and tools
+  to Sculpt OS.
+
+
+Optimizations
+#############
+
+:De-privileging the VESA graphics driver:
+
+  The VESA graphics driver executes the graphics initialization code provided
+  by the graphics card via an x86 emulator. To initialize a graphics mode, this
+  code needs to access device hardware. Currently, we permit access to all
+  device registers requested by the graphics-card's code. These devices include
+  the system timer, the PCI configuration registers, and the interrupt
+  controller, which are critical for the proper operating of the kernel. The
+  goal of this work is to restrict the permissions of the VESA driver to a
+  minimum by virtualizing all devices but the actual graphics card.
+

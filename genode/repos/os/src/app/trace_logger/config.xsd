@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+	<xs:include schemaLocation="base_types.xsd"/>
+	<xs:include schemaLocation="timeout_types.xsd"/>
+
+	<xs:simpleType name="Trace_policy_name">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1"/>
+			<xs:maxLength value="40"/>
+		</xs:restriction>
+	</xs:simpleType><!-- Trace_policy_name -->
+
+	<xs:element name="config">
+		<xs:complexType>
+			<xs:choice minOccurs="0" maxOccurs="unbounded">
+
+				<xs:element name="default-policy">
+					<xs:complexType>
+						<xs:attribute name="thread" type="Thread_name" />
+						<xs:attribute name="buffer" type="Number_of_bytes" />
+						<xs:attribute name="policy" type="Trace_policy_name" />
+					</xs:complexType>
+				</xs:element><!-- default-policy -->
+
+				<xs:element name="policy">
+					<xs:complexType>
+					<xs:complexContent>
+					<xs:extension base="Session_policy">
+						<xs:attribute name="thread" type="Thread_name" />
+						<xs:attribute name="buffer" type="Number_of_bytes" />
+						<xs:attribute name="policy" type="Trace_policy_name" />
+					</xs:extension>
+					</xs:complexContent>
+					</xs:complexType>
+				</xs:element><!-- policy -->
+
+			</xs:choice>
+			<xs:attribute name="verbose"               type="Boolean" />
+			<xs:attribute name="activity"              type="Boolean" />
+			<xs:attribute name="affinity"              type="Boolean" />
+			<xs:attribute name="session_arg_buffer"    type="Number_of_bytes" />
+			<xs:attribute name="session_ram"           type="Number_of_bytes" />
+			<xs:attribute name="session_parent_levels" type="xs:nonNegativeInteger" />
+			<xs:attribute name="default_policy"        type="Trace_policy_name" />
+			<xs:attribute name="period_sec"            type="Seconds" />
+			<xs:attribute name="default_buffer"        type="Number_of_bytes" />
+		</xs:complexType>
+	</xs:element><!-- config -->
+
+</xs:schema>

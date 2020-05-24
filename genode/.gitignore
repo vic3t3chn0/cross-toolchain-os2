@@ -1,0 +1,11 @@
+*~
+*.orig
+*.swp
+*.rej
+
+/build
+/contrib
+/depot
+/public
+/repos/world
+

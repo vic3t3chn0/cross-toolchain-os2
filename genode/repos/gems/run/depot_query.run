@@ -1,0 +1,144 @@
+build { init app/depot_query app/depot_deploy }
+
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/src/report_rom \
+                  [depot_user]/src/fs_rom \
+                  [depot_user]/src/vfs \
+                  [depot_user]/src/init
+
+create_tar_from_depot_binaries [run_dir]/genode/depot.tar \
+                               [depot_user]/pkg/test-fs_report
+
+proc query_pkg {} {
+	return test-fs_report/[_current_depot_archive_version pkg test-fs_report] }
+
+install_config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="Timer"/> </provides>
+	</start>
+
+	<start name="report_rom">
+		<binary name="report_rom"/>
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="Report"/> <service name="ROM"/> </provides>
+		<config verbose="yes">
+			<policy label="depot_deploy -> blueprint" report="depot_query -> blueprint"/>
+			<policy label="depot_query -> query"      report="depot_deploy -> query"/>
+			<policy label="dynamic -> config"         report="depot_deploy -> init.config"/>
+		</config>
+	</start>
+
+	<start name="vfs">
+		<resource name="RAM" quantum="4M"/>
+		<provides> <service name="File_system"/> </provides>
+		<config>
+			<vfs>
+				<tar name="depot.tar"/>
+				<dir name="badguy">
+					<dir name="pkg">
+						<dir name="invalid">
+							<dir name="current">
+								<inline name="archives"/>
+								<inline name="runtime">
+									<runtime ram="1M" caps="100" binary="chroot">
+										<content>
+											<rom label="chroot"/>
+										</content>
+									</runtime>
+								</inline>
+							</dir>
+						</dir>
+					</dir>
+				</dir>
+			</vfs>
+			<policy label="depot_query -> depot" root="/" />
+			<policy label="fs_rom -> "           root="/" />
+		</config>
+	</start>
+
+	<start name="fs_rom">
+		<resource name="RAM" quantum="4M"/>
+		<provides> <service name="ROM"/> </provides>
+	</start>
+
+	<start name="depot_query">
+		<resource name="RAM" quantum="2M"/>
+		<config query="rom">
+			<vfs> <dir name="depot"> <fs label="depot"/> </dir> </vfs>
+		</config>
+		<route>
+			<service name="ROM" label="query"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="depot_deploy">
+		<resource name="RAM" quantum="1M"/>
+		<config arch="} [depot_spec] {">
+			<static>
+				<parent-provides>
+					<service name="ROM"/>
+					<service name="CPU"/>
+					<service name="PD"/>
+					<service name="LOG"/>
+					<service name="Timer"/>
+				</parent-provides>
+			</static>
+			<common_routes>
+				<service name="ROM" label_last="ld.lib.so"> <parent/> </service>
+				<service name="ROM" label_last="init">      <parent/> </service>
+				<service name="CPU">   <parent/> </service>
+				<service name="PD">    <parent/> </service>
+				<service name="LOG">   <parent/> </service>
+				<service name="Timer"> <parent/> </service>
+			</common_routes>
+			<start name="invalid" pkg="badguy/pkg/invalid/current"/>
+			<start name="test" pkg="} [depot_user] {/pkg/} [query_pkg] {"/>
+		</config>
+		<route>
+			<service name="ROM" label="blueprint"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="dynamic" caps="8000">
+		<resource name="RAM" quantum="64M"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label_last="ld.lib.so"> <parent/> </service>
+			<service name="ROM" label_last="init">      <parent/> </service>
+			<service name="ROM" label="config"> <child name="report_rom"/> </service>
+			<service name="ROM">   <child name="fs_rom"/> </service>
+			<service name="Timer"> <child name="timer"/>  </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+</config>}
+
+build_boot_image { init depot_query depot_deploy vfs.lib.so }
+
+append qemu_args " -nographic "
+
+run_genode_until {.*\] child "test-fs_report" exited with exit value 0.*\n} 30
+

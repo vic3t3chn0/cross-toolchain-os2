@@ -1,0 +1,131 @@
+set build_components { app/pdf_view }
+
+source ${genode_dir}/repos/base/run/platform_drv.inc
+
+build $build_components
+
+create_boot_directory
+
+import_from_depot \
+	[depot_user]/pkg/[drivers_interactive_pkg] \
+	[depot_user]/pkg/motif_wm \
+	[depot_user]/src/[base_src] \
+	[depot_user]/src/init \
+	[depot_user]/src/nitpicker \
+
+set config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<service name="Nitpicker"> <child name="wm"/> </service>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+	<start name="drivers" caps="1000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides>
+			<service name="Input"/> <service name="Framebuffer"/>
+		</provides>
+	</start>
+
+	<start name="nitpicker">
+		<resource name="RAM" quantum="4M"/>
+		<provides><service name="Nitpicker"/></provides>
+		<config focus="rom">
+			<domain name="pointer" layer="1" content="client" label="no" origin="pointer" />
+			<domain name="default" layer="2" content="client" label="no" hover="always"/>
+
+			<policy label_prefix="pointer" domain="pointer"/>
+			<default-policy domain="default"/>
+		</config>
+	</start>
+
+	<start name="pointer">
+		<resource name="RAM" quantum="1M"/>
+		<route>
+			<service name="Nitpicker"> <child name="nitpicker"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="wm" caps="1000">
+		<resource name="RAM" quantum="32M"/>
+		<binary name="init"/>
+		<provides>
+			<service name="Nitpicker"/> <service name="Report"/> <service name="ROM"/>
+		</provides>
+		<route>
+			<service name="ROM" label="config"> <parent label="wm.config"/> </service>
+			<service name="Nitpicker"> <child name="nitpicker"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="pdf_view" caps="256">
+		<resource name="RAM" quantum="1G"/>
+		<config>
+			<vfs>
+				<rom name="test.pdf" />
+				<dir name="dev"> <log/> </dir>
+			</vfs>
+			<libc stdout="/dev/log" stderr="/dev/log"/>
+		</config>
+	</start>
+</config>
+}
+
+install_config $config
+
+#
+# Download test PDF file
+#
+if {![file exist bin/test.pdf]} {
+	set pdf_url "http://genode-labs.com/publications/genode-fpga-graphics-2009.pdf"
+	catch { exec wget $pdf_url -O bin/test.pdf }
+}
+
+if {![file exist bin/test.pdf]} {
+	puts stderr "Could not download test PDF from '$pdf_url'"
+	exit 1
+}
+
+#
+# Pin the nitpicker focus to the window manager by providing a static focus ROM
+#
+set fd [open [run_dir]/genode/focus w]
+puts $fd "<focus label=\"wm -> focus\"/>"
+close $fd
+
+append boot_modules {
+	libc.lib.so vfs.lib.so libm.lib.so
+	openjpeg.lib.so freetype.lib.so libpng.lib.so zlib.lib.so jbig2dec.lib.so
+	mupdf.lib.so jpeg.lib.so
+	pdf_view
+	test.pdf
+}
+
+build_boot_image $boot_modules
+
+append qemu_args " -m 768"
+
+run_genode_until forever
+

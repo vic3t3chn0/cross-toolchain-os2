@@ -1,0 +1,126 @@
+#
+# \brief  Test for using the lwIP TCP/IP stack
+# \author Norman Feske
+# \date   2011-05-22
+#
+# This test case executes a small HTTP server on Genode running on qemu. When
+# the HTTP server is up, a HTTP request to the server is performed using
+# 'lynx'. The response is validated against a known pattern.
+#
+# The test uses qemu's "-netdev user" option, redirecting Genode's port 80 to the
+# host's port 5555. Consequently, it cannot be executed on non-qemu test
+# environments (i.e., the test won't work with the Linux version of Genode).
+#
+# Please make sure to include a nic driver in your build configuration. E.g.,
+# on the x86 platform, you may enable the 'dde_ipxe' repository.
+#
+
+#
+# TODO: Add support for Linux via user-level networking (using the
+#       tun/tap proxy driver at os/src/drivers/nic/linux)
+#
+
+if {[expr [have_spec linux]] ||
+    [expr [have_spec imx53] && [have_spec trustzone]] ||
+    [have_spec rpi3] ||
+    [expr [have_spec riscv]]} {
+	puts "\n Run script is not supported on this platform. \n"; exit 0 }
+
+set lynx [installed_command lynx]
+
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_nic_pkg] \
+                  [depot_user]/src/init \
+                  [depot_user]/src/libc \
+                  [depot_user]/src/vfs_lwip \
+                  [depot_user]/src/vfs
+
+build { test/lwip/http_srv }
+
+install_config {
+<config verbose="yes">
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="Timer"/> </provides>
+	</start>
+
+	<start name="drivers" caps="1000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides> <service name="Nic"/> </provides>
+	</start>
+
+	<start name="test-lwip_httpsrv" caps="120">
+		<resource name="RAM" quantum="4M"/>
+		<config>
+			<vfs>
+				<dir name="dev">    <log/>             </dir>
+				<dir name="socket"> <lwip dhcp="yes"/> </dir>
+			</vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" socket="/socket"/>
+		</config>
+	</start>
+</config>
+}
+
+build_boot_image { test-lwip_httpsrv }
+
+#
+# Qemu config
+#
+proc qemu_nic_model {} {
+	if [have_spec x86]         { return e1000 }
+	if [have_spec lan9118]     { return lan9118 }
+	if [have_spec zynq]        { return cadence_gem }
+	return nic_model_missing
+}
+append qemu_args "  -nographic "
+append qemu_args " -netdev user,id=net0,hostfwd=tcp::5555-:80 "
+append qemu_args " -net nic,model=[qemu_nic_model],netdev=net0 "
+
+run_genode_until {.*lwIP Nic interface up.*\n} 30
+
+if {[have_include "power_on/qemu"]} {
+	set uri "http://localhost:5555/"
+} else {
+	set match_string "lwIP Nic interface up address=.* netmask.*\n"
+	regexp $match_string $output ip_addr
+	regexp {[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+} $ip_addr ip_addr 
+
+	set uri "http://$ip_addr:80/"
+}
+
+puts "http server is up, try to query website $uri"
+
+set website [exec $lynx -dump $uri]
+
+puts "response:\n$website"
+
+if {![regexp {Welcome to our lwIP HTTP server!} $website dummy]} {
+	puts stderr "Query returned unexpected website"
+	exit 2;
+}
+
+# vi: set ft=tcl :

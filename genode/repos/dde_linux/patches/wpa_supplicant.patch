@@ -1,0 +1,108 @@
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index 5cff47fab..af08177b2 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -1682,13 +1682,13 @@ static void wpa_driver_nl80211_rfkill_blocked(void *ctx)
+ {
+ 	struct wpa_driver_nl80211_data *drv = ctx;
+ 
+-	wpa_printf(MSG_DEBUG, "nl80211: RFKILL blocked");
++	wpa_printf(MSG_INFO, "nl80211: RFKILL blocked");
+ 
+ 	/*
+ 	 * rtnetlink ifdown handler will report interfaces other than the P2P
+ 	 * Device interface as disabled.
+ 	 */
+-	if (drv->nlmode == NL80211_IFTYPE_P2P_DEVICE)
++	// if (drv->nlmode == NL80211_IFTYPE_P2P_DEVICE)
+ 		wpa_supplicant_event(drv->ctx, EVENT_INTERFACE_DISABLED, NULL);
+ }
+ 
+@@ -1696,7 +1696,7 @@ static void wpa_driver_nl80211_rfkill_blocked(void *ctx)
+ static void wpa_driver_nl80211_rfkill_unblocked(void *ctx)
+ {
+ 	struct wpa_driver_nl80211_data *drv = ctx;
+-	wpa_printf(MSG_DEBUG, "nl80211: RFKILL unblocked");
++	wpa_printf(MSG_INFO, "nl80211: RFKILL unblocked");
+ 	if (i802_set_iface_flags(drv->first_bss, 1)) {
+ 		wpa_printf(MSG_DEBUG, "nl80211: Could not set interface UP "
+ 			   "after rfkill unblock");
+@@ -1710,7 +1710,7 @@ static void wpa_driver_nl80211_rfkill_unblocked(void *ctx)
+ 	 * rtnetlink ifup handler will report interfaces other than the P2P
+ 	 * Device interface as enabled.
+ 	 */
+-	if (drv->nlmode == NL80211_IFTYPE_P2P_DEVICE)
++	// if (drv->nlmode == NL80211_IFTYPE_P2P_DEVICE)
+ 		wpa_supplicant_event(drv->ctx, EVENT_INTERFACE_ENABLED, NULL);
+ }
+ 
+@@ -7645,7 +7645,7 @@ static void * nl80211_global_init(void *ctx)
+ 	if (wpa_driver_nl80211_init_nl_global(global) < 0)
+ 		goto err;
+ 
+-	global->ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
++	global->ioctl_sock = 42;
+ 	if (global->ioctl_sock < 0) {
+ 		wpa_printf(MSG_ERROR, "nl80211: socket(PF_INET,SOCK_DGRAM) failed: %s",
+ 			   strerror(errno));
+diff --git a/src/drivers/netlink.c b/src/drivers/netlink.c
+index 0e960f48c..38fb26c18 100644
+--- a/src/drivers/netlink.c
++++ b/src/drivers/netlink.c
+@@ -13,6 +13,8 @@
+ #include "priv_netlink.h"
+ #include "netlink.h"
+ 
++#define PF_NETLINK 16
++#define AF_NETLINK PF_NETLINK
+ 
+ struct netlink_data {
+ 	struct netlink_config *cfg;
+diff --git a/src/utils/common.c b/src/utils/common.c
+index 1eb33705b..e4447306a 100644
+--- a/src/utils/common.c
++++ b/src/utils/common.c
+@@ -498,12 +498,12 @@ void printf_encode(char *txt, size_t maxlen, const u8 *data, size_t len)
+ 			*txt++ = 't';
+ 			break;
+ 		default:
+-			if (data[i] >= 32 && data[i] <= 126) {
++			// if (data[i] >= 32 && data[i] <= 126) {
+ 				*txt++ = data[i];
+-			} else {
+-				txt += os_snprintf(txt, end - txt, "\\x%02x",
+-						   data[i]);
+-			}
++			// } else {
++			// 	txt += os_snprintf(txt, end - txt, "\\x%02x",
++			// 			   data[i]);
++			// }
+ 			break;
+ 		}
+ 	}
+diff --git a/src/utils/eloop.c b/src/utils/eloop.c
+index 436bc8c99..f5ff4facb 100644
+--- a/src/utils/eloop.c
++++ b/src/utils/eloop.c
+@@ -28,7 +28,7 @@
+ #endif
+ 
+ #ifdef CONFIG_ELOOP_POLL
+-#include <poll.h>
++#include <sys/poll.h>
+ #endif /* CONFIG_ELOOP_POLL */
+ 
+ #ifdef CONFIG_ELOOP_EPOLL
+diff --git a/wpa_supplicant/ctrl_iface.c b/wpa_supplicant/ctrl_iface.c
+index fe39c25b7..3a682785e 100644
+--- a/wpa_supplicant/ctrl_iface.c
++++ b/wpa_supplicant/ctrl_iface.c
+@@ -9778,7 +9778,7 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
+ 					 char *buf, size_t *resp_len)
+ {
+ 	char *reply;
+-	const int reply_size = 4096;
++	const int reply_size = 4096*8;
+ 	int reply_len;
+ 
+ 	if (os_strncmp(buf, WPA_CTRL_RSP, os_strlen(WPA_CTRL_RSP)) == 0 ||

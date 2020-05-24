@@ -1,0 +1,95 @@
+#
+# \brief  Test for the TCP terminal
+# \author Norman Feske
+# \date   2011-09-08
+#
+
+#
+# TODO: Add support for Linux via user-level networking (using the
+#       tun/tap proxy driver at os/src/drivers/nic/linux)
+#
+if {[have_spec linux]} {
+	puts "Run script does not support Linux."; exit 0 }
+
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_nic_pkg] \
+                  [depot_user]/src/init \
+                  [depot_user]/src/libc \
+                  [depot_user]/src/vfs \
+                  [depot_user]/src/vfs_lwip
+
+build { server/tcp_terminal test/terminal_echo }
+
+install_config {
+<config verbose="yes">
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="Timer"/> </provides>
+	</start>
+	<start name="drivers" caps="1000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides> <service name="Nic"/> </provides>
+	</start>
+	<start name="tcp_terminal" caps="200">
+		<resource name="RAM" quantum="8M"/>
+		<provides> <service name="Terminal"/> </provides>
+		<config>
+			<policy label_prefix="test-terminal_echo" port="8888"/>
+			<vfs>
+				<dir name="dev"> <log/> </dir>
+				<dir name="socket"> <lwip dhcp="yes"/> </dir>
+			</vfs>
+			<libc stdout="/dev/log" socket="/socket"/>
+		</config>
+	</start>
+	<start name="test-terminal_echo">
+		<resource name="RAM" quantum="1M"/>
+	</start>
+</config>
+}
+
+build_boot_image { tcp_terminal test-terminal_echo libc_pipe.lib.so }
+
+
+# qemu config
+
+proc qemu_nic_model {} {
+	if [have_spec x86]     { return e1000 }
+	if [have_spec lan9118] { return lan9118 }
+	if [have_spec zynq]    { return cadence_gem }
+	return nic_model_missing
+}
+
+append qemu_args " -nographic "
+append qemu_args " -netdev user,id=net0,hostfwd=tcp::5555-:8888 "
+append qemu_args " -net nic,model=[qemu_nic_model],netdev=net0 "
+
+run_genode_until forever
+
+#
+# Now, connect via 'telnet localhost 5555'
+#
+
+# vi: set ft=tcl :

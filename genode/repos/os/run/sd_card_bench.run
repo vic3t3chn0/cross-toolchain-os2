@@ -1,0 +1,107 @@
+#
+# Check for platform support
+#
+
+proc buffer_size_kib {} {
+	if {[have_spec pl180]}     { return [expr 12 * 1024] }
+	if {[have_spec imx8q_evk]} { return [expr      1024] }
+	if {[have_spec imx6]}      { return [expr      1024] }
+	if {[have_spec imx53] &&
+	    ![have_spec foc]}      { return [expr      1024] }
+	if {[have_spec rpi]}       { return [expr  4 * 1024] }
+	puts "\n Run script is not supported on this platform. \n";
+	exit 0;
+}
+
+proc sd_card_drv {} {
+	if {[have_spec pbxa9]}           { return pbxa9_sd_card_drv }
+	if {[have_spec imx8q_evk]}       { return imx8q_evk_sd_card_drv }
+	if {[have_spec imx6q_sabrelite]} { return imx6q_sabrelite_sd_card_drv }
+	if {[have_spec imx53]}           { return imx53_sd_card_drv }
+	if {[have_spec rpi]}             { return rpi_sd_card_drv }
+	puts "\n Run script is not supported on this platform. \n";
+	exit 0;
+}
+
+#
+# Build the boot modules
+#
+
+set build_components { core init timer drivers/sd_card }
+
+source ${genode_dir}/repos/base/run/platform_drv.inc
+append_platform_drv_build_components
+build $build_components
+create_boot_directory
+
+
+#
+# Install the config
+#
+
+append config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>}
+
+append_platform_drv_config
+
+append config {
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+	<start name="} [sd_card_drv] {">
+		<resource name="RAM" quantum="16M"/>
+		<provides><service name="Block"/></provides>
+		<config benchmark="yes" buffer_size_kib="} [buffer_size_kib] {"/>
+	</start>
+</config>}
+
+install_config $config
+
+
+#
+# Create the boot image
+#
+
+set boot_modules {
+	core ld.lib.so init
+	timer
+}
+
+append boot_modules [sd_card_drv]
+append_platform_drv_boot_modules
+build_boot_image $boot_modules
+
+
+#
+# Run and evaluate the test
+#
+# If we run on qemu, provide a virtual disk
+#
+
+set disk_image "bin/sd_card.img"
+if {[have_include power_on/qemu]} {
+
+	if { [file exists $disk_image] == 0 } then {
+		catch { exec dd if=/dev/zero of=$disk_image bs=1M count=512 } }
+
+	append qemu_args "-drive file=$disk_image,format=raw,if=sd,cache=writeback "
+	append qemu_args "-nographic "
+}
+
+run_genode_until "--- SD card benchmark finished ---" 120
+
+exec rm -f $disk_image

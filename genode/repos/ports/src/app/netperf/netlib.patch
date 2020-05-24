@@ -1,0 +1,35 @@
++++ src/app/netperf/src/netlib.c
+@@ -1095,8 +1095,13 @@
+ 
+ #endif /* WIN32 */
+ 
++#ifdef GENODE_BUILD
++void
++start_do_not_use_timer(int time)
++#else
+ void
+ start_timer(int time)
++#endif
+ {
+ 
+ #ifdef WIN32
+@@ -3059,7 +3063,9 @@
+ 	      (which == SEND_BUFFER) ? "SO_SNDBUF" : "SO_RCVBUF",
+ 	      errno);
+       fflush(where);
++#ifndef GENODE_BUILD
+       exit(1);
++#endif
+     }
+     if (debug > 1) {
+       fprintf(where, "netperf: set_sock_buffer: %s of %d requested.\n",
++++ src/app/netperf/src/netlib.h
+@@ -368,7 +368,7 @@
+ /* Let's define a macro to hide all of this. */
+ 
+ #ifndef WIN32
+-#define SOCKET_EINTR(return_value) (errno == EINTR)
++#define SOCKET_EINTR(return_value) (errno == EINTR || errno == EPIPE)
+ #define SOCKET_EADDRINUSE(return_value) (errno == EADDRINUSE)
+ #define SOCKET_EADDRNOTAVAIL(return_value) (errno == EADDRNOTAVAIL)
+ 

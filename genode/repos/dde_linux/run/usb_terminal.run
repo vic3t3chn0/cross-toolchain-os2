@@ -1,0 +1,99 @@
+assert_spec x86
+set usb_raw_device ""
+
+#
+# Check if USB_RAW_DEVICE is set for Qemu
+#
+if {[have_include power_on/qemu]} {
+	if {![info exists ::env(USB_RAW_DEVICE)]} {
+		puts "\nPlease define USB_RAW_DEVICE environment variable and set it to your USB device <bus.device>\n"
+		exit 0
+	}
+	set usb_raw_device $::env(USB_RAW_DEVICE)
+}
+
+#
+# Build
+#
+set build_components {
+	core init timer
+	drivers/usb
+	server/usb_terminal
+	test/terminal_echo
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc
+append_platform_drv_build_components
+
+build $build_components
+
+create_boot_directory
+
+#
+# Generate config
+#
+
+append config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>}
+
+append_platform_drv_config
+
+append config {
+	<start name="timer">
+		<resource name="RAM" quantum="2M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+	<start name="usb_drv">
+		<resource name="RAM" quantum="32M"/>
+		<provides><service name="Usb"/></provides>
+		<config uhci="yes" ohci="yes" ehci="yes" xhci="yes">
+			<raw>
+				<policy label="usb_terminal -> usb_serial" vendor_id="0x67b" product_id="0x2303"/>
+			</raw>
+		</config>
+	</start>
+	<start name="usb_terminal">
+		<resource name="RAM" quantum="4M"/>
+		<provides><service name="Terminal"/></provides>
+	</start>
+	<start name="test-terminal_echo">
+		<resource name="RAM" quantum="2M"/>
+	</start>
+</config>}
+
+install_config $config
+
+#
+# Boot modules
+#
+
+# generic modules
+set boot_modules {
+	core ld.lib.so init timer usb_drv test-terminal_echo
+	usb_terminal
+}
+
+lappend_if [have_spec gpio] boot_modules [gpio_drv]
+
+append_platform_drv_boot_modules
+
+build_boot_image $boot_modules
+
+append qemu_args "  -nographic -usb  -usbdevice host:$usb_raw_device -nographic"
+
+
+run_genode_until forever

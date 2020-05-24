@@ -1,0 +1,10 @@
+LICENSE := unknown
+DOWNLOADS := jbig2dec.archive
+VERSION := 0.15
+
+URL(jbig2dec) := https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs924/jbig2dec-$(VERSION).tar.gz
+SHA(jbig2dec) := 6bfa1af72de37c7929315933a1ba696540d860936ad98f9de02fc725d7e53854
+DIR(jbig2dec) := src/lib/jbig2dec
+
+DIRS := include/jbig2dec
+DIR_CONTENT(include/jbig2dec) := src/lib/jbig2dec/jbig2.h

@@ -1,0 +1,160 @@
+create_boot_directory
+
+#
+# To use the themed decorator instead of the default one, replace
+# 'pkg/motif_wm' with 'pkg/themed_wm'.
+#
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_interactive_pkg] \
+                  [depot_user]/pkg/motif_wm \
+                  [depot_user]/raw/genode_bg \
+                  [depot_user]/pkg/backdrop \
+                  [depot_user]/src/demo \
+                  [depot_user]/src/init \
+                  [depot_user]/src/nitpicker \
+                  [depot_user]/src/nit_fb \
+                  [depot_user]/src/vfs
+
+install_config {
+<config prio_levels="2">
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+
+	<start name="drivers" caps="1000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides>
+			<service name="Input"/> <service name="Framebuffer"/>
+		</provides>
+	</start>
+
+	<start name="nitpicker">
+		<resource name="RAM" quantum="4M"/>
+		<provides><service name="Nitpicker"/></provides>
+		<config focus="rom">
+			<domain name="pointer" layer="1" content="client" label="no" origin="pointer" />
+			<domain name="default" layer="2" content="client" label="no" hover="always"/>
+
+			<policy label_prefix="pointer" domain="pointer"/>
+			<default-policy domain="default"/>
+		</config>
+	</start>
+
+	<start name="pointer">
+		<resource name="RAM" quantum="1M"/>
+		<route>
+			<service name="Nitpicker"> <child name="nitpicker"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="wm" caps="1000">
+		<resource name="RAM" quantum="32M"/>
+		<binary name="init"/>
+		<provides>
+			<service name="Nitpicker"/> <service name="Report"/> <service name="ROM"/>
+		</provides>
+		<route>
+			<service name="ROM" label="config"> <parent label="wm.config"/> </service>
+			<service name="Nitpicker"> <child name="nitpicker"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="launchpad" priority="-1" caps="1000">
+		<resource name="RAM" quantum="20M"/>
+		<config>
+			<launcher name="nit_fb" ram_quota="7M" caps="100">
+				<config initial_width="500" initial_height="400" />
+			</launcher>
+			<launcher name="nitpicker" ram_quota="1M" caps="100">
+				<config>
+					<domain name="default" layer="2" content="client"
+					        label="no" hover="always" focus="click"/>
+					<default-policy domain="default"/>
+				</config>
+			</launcher>
+			<launcher name="testnit" ram_quota="1M" caps="100"/>
+		</config>
+		<route>
+			<any-service> <child name="wm"/> <parent/> <any-child/>
+			</any-service>
+		</route>
+	</start>
+
+	<start name="backdrop" priority="-1">
+		<resource name="RAM" quantum="24M"/>
+		<config>
+			<libc/>
+			<vfs>
+				<rom name="genode_logo.png"/>
+				<rom name="grid.png"/>
+			</vfs>
+			<fill color="#224433" />
+			<image png="grid.png"        tiled="yes" alpha="200" />
+			<image png="genode_logo.png" anchor="bottom_right" alpha="150"
+			                             xpos="-20" ypos="-20" />
+		</config>
+		<route>
+			<any-service> <child name="nitpicker" label="backdrop"/> <parent/> <any-child/>
+			</any-service>
+		</route>
+	</start>
+
+	<start name="wm_backdrop" priority="-1">
+		<binary name="backdrop" />
+		<resource name="RAM" quantum="24M"/>
+		<config>
+			<libc/>
+			<vfs>
+				<rom name="genode_logo.png"/>
+			</vfs>
+			<fill color="#664455" />
+			<image png="genode_logo.png" scale="zoom" alpha="150" />
+			<image png="genode_logo.png" scale="fit" alpha="150" tiled="yes" />
+			<image png="genode_logo.png" />
+		</config>
+		<route>
+			<any-service> <child name="wm"/> <parent/> <any-child/>
+			</any-service>
+		</route>
+	</start>
+</config>}
+
+#
+# Pin the nitpicker focus to the window manager by providing a static focus ROM
+#
+set fd [open [run_dir]/genode/focus w]
+puts $fd "<focus label=\"wm -> focus\"/>"
+close $fd
+
+file copy -force [genode_dir]/repos/gems/recipes/raw/motif_wm/wm.config [run_dir]/genode/
+
+build { app/window_layouter app/decorator server/nitpicker server/wm test/nitpicker }
+
+build_boot_image { window_layouter decorator nitpicker wm testnit }
+
+run_genode_until forever

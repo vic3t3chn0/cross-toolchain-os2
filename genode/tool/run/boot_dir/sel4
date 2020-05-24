@@ -1,0 +1,171 @@
+proc binary_name_ld_lib_so { } { return "ld-sel4.lib.so" }
+proc binary_name_core_o    { } { return "core-sel4.o" }
+proc binary_name_timer     { } {
+	if {[have_spec imx6]}        { return "imx6_timer_drv" }
+	if {[have_spec imx7d_sabre]} { return "imx7_timer_drv" }
+	if {[have_spec x86]}         { return "pit_timer_drv"  }
+	puts "unknown platform - no timer driver"
+	exit -1
+}
+
+proc kernel_files          { } { return sel4 }
+
+
+proc run_boot_string   { } { return "\n\rBooting all finished, dropped to user space" }
+proc core_link_address { } { return "0x02000000" }
+
+proc sel4_elfloader_dir { } {
+	if {![file exists [pwd]/var/libcache/kernel-sel4-[board]/elfloader]} {
+		build LIB=kernel-sel4-[board]
+	}
+	return "[pwd]/var/libcache/kernel-sel4-[board]/elfloader"
+}
+
+##
+# Populate boot directory with binaries on hw
+#
+proc run_boot_dir {binaries} {
+
+	#
+	# Build kernel and dynamic linker on demand, if not yet present in
+	# '[run_dir]/genode/'
+	#
+	set kernel_arg ""
+	set ld_arg     ""
+	if {![file exists [run_dir]/genode/sel4]}      { set kernel_arg "kernel/sel4" }
+	if {![file exists [run_dir]/genode/ld.lib.so]} { set ld_arg     "lib/ld/sel4" }
+	set targets "$kernel_arg $ld_arg"
+
+	if {[llength $targets]} { build $targets }
+
+	if {$kernel_arg != ""} {
+		file copy -force [pwd]/bin/sel4-[board] [run_dir]/genode/sel4
+	}
+
+	build_core_image $binaries
+
+	#
+	# Move kernel files to distinct location within the boot directory so that
+	# we can remove [run_dir]/genode after the core image has been built.
+	#
+	exec mkdir -p [run_dir]/boot
+	file copy -force [run_dir]/genode/sel4 [run_dir]/boot/sel4
+	remove_genode_dir
+
+	exec mv [run_dir]/image.elf [run_dir]/boot/image.elf
+
+	if {[have_include "image/iso"] || [have_include "image/disk"] || [have_include image/uefi]} {
+		set serial_bender_opt ""
+
+		if {[have_include "image/disk"]} {
+			exec mkdir -p [run_dir]/boot/grub
+			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+		}
+
+		if {[have_include "image/iso"]} {
+			install_iso_bootloader_to_run_dir
+		}
+
+		if {[have_include image/uefi]} {
+			set grub2_path [get_grub2_dir]
+
+			exec mkdir -p [run_dir]/efi/boot
+			exec cp $grub2_path/boot/grub2/grub2_32.efi [run_dir]/efi/boot/bootia32.efi
+			exec cp $grub2_path/boot/grub2/grub2_64.efi [run_dir]/efi/boot/bootx64.efi
+			exec mkdir -p [run_dir]/boot/grub
+			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+
+			set serial_bender_opt "serial_fallback"
+		}
+
+		#
+		# Generate GRUB2 config file
+		#
+		set fh [open "[run_dir]/boot/grub/grub.cfg" "WRONLY CREAT TRUNC"]
+		puts $fh "set timeout=0"
+		# tell grub2 to prefer 32bit framebuffer resolution
+		puts $fh "set gfxpayload=\"0x0x32\""
+		puts $fh "menuentry 'Genode on seL4' {"
+		puts $fh " insmod multiboot2"
+		puts $fh " multiboot2 /boot/bender phys_max=256M $serial_bender_opt"
+		puts $fh " module2 /boot/sel4 sel4 disable_iommu"
+		puts $fh " module2 /boot/image.elf image.elf"
+		puts $fh "}"
+		close $fh
+	}
+
+	#
+	# Use seL4 elfloader tool to generate bootable image on ARM
+	#
+	if {[have_spec arm]} {
+		if {[have_spec imx6]} {
+			set ::env(PLAT) imx6
+		} elseif {[have_spec imx7d_sabre]} {
+			set ::env(PLAT) imx7
+		} else {
+			puts "abort - unknown ARM board"
+			exit 1
+		}
+		# keep Genode image.elf as genode.elf
+		exec mv [run_dir]/boot/image.elf [run_dir]/boot/genode.elf
+		exec mv [run_dir]/boot/sel4 [run_dir]/boot/kernel.elf
+
+		# call seL4 elfloader tool to generate image.elf bootable by uboot with 'bootelf' command
+		set ::env(COMMON_PATH) [sel4_elfloader_dir]
+		set ::env(CPPFLAGS) -I[sel4_elfloader_dir]/include
+		set ::env(TOOLPREFIX) [cross_dev_prefix]
+		exec [sel4_elfloader_dir]/gen_boot_image.sh [pwd]/[run_dir]/boot/kernel.elf [pwd]/[run_dir]/boot/genode.elf [pwd]/[run_dir]/boot/image.elf
+	}
+
+	run_image [run_dir]/boot/image.elf
+
+	# set symbolic link to image.elf file in TFTP directory for PXE boot
+	if {[have_spec arm] && [have_include "load/tftp"]} {
+		exec ln -sf [pwd]/[run_dir]/boot/image.elf [load_tftp_base_dir][load_tftp_offset_dir]
+
+		if {[have_include "image/uboot"]} {
+			exec ln -sf [pwd]/[run_dir]/uImage [load_tftp_base_dir][load_tftp_offset_dir]
+		}
+	}
+
+	if {[have_spec x86] && [have_include "load/tftp"]} {
+		#
+		# Install PXE bootloader pulsar
+		#
+		install_pxe_bootloader_to_run_dir
+
+		#
+		# Generate pulsar config file
+		#
+		set fh [open "[run_dir]/config-52-54-00-12-34-56" "WRONLY CREAT TRUNC"]
+		puts $fh " exec /boot/bender phys_max=256M"
+		puts $fh " load /boot/sel4 disable_iommu"
+		puts $fh " load /boot/image.elf"
+		close $fh
+
+		generate_tftp_config
+	}
+
+	if {[have_spec x86] && [have_include "load/ipxe"]} {
+		create_ipxe_iso_config
+		update_ipxe_boot_dir
+		create_symlink_for_iso
+	}
+}
+
+
+##
+# Base source archive within depot
+#
+proc base_src { } {
+
+	if {[have_spec x86]}             { return base-sel4-x86 }
+	if {[have_spec imx6q_sabrelite]} { return base-sel4-imx6q_sabrelite }
+	if {[have_spec imx7d_sabre]}     { return base-sel4-imx7d_sabre }
+
+	global specs
+
+	puts stderr "Test requires base-sel4 kernel archive, which is missing for this build configuration"
+	puts stderr "  SPECS=\"$specs\""
+	exit 0
+}

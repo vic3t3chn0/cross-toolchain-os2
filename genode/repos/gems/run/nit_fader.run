@@ -1,0 +1,127 @@
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_interactive_pkg] \
+                  [depot_user]/src/init \
+                  [depot_user]/src/dynamic_rom \
+                  [depot_user]/src/nitpicker \
+                  [depot_user]/src/demo
+
+install_config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="CPU"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="LOG"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+	</parent-provides>
+
+	<default caps="100"/>
+
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+
+	<start name="drivers" caps="2000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides>
+			<service name="Input"/> <service name="Framebuffer"/>
+		</provides>
+	</start>
+
+	<start name="nitpicker">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Nitpicker"/></provides>
+		<config>
+			<domain name="pointer" layer="1" content="client" label="no" origin="pointer" />
+			<domain name="default" layer="3" content="client" label="no" focus="click" hover="always" />
+
+			<policy label_prefix="pointer" domain="pointer"/>
+			<default-policy domain="default"/>
+		</config>
+	</start>
+
+	<start name="pointer">
+		<resource name="RAM" quantum="1M"/>
+		<route>
+			<service name="Nitpicker"> <child name="nitpicker" /> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="dynamic_rom">
+		<resource name="RAM" quantum="4M"/>
+		<provides><service name="ROM"/></provides>
+		<config verbose="yes">
+			<rom name="nit_fader.config">
+				<inline description="initial state">
+					<config />
+				</inline>
+				<sleep milliseconds="500" />
+				<inline description="make visible">
+					<config alpha="255" />
+				</inline>
+				<sleep milliseconds="3000" />
+				<inline description="reduce alpha">
+					<config alpha="120" />
+				</inline>
+				<sleep milliseconds="3000" />
+				<inline description="make invisible">
+					<config alpha="0" />
+				</inline>
+				<sleep milliseconds="2000" />
+				<empty />
+			</rom>
+		</config>
+	</start>
+
+	<start name="nit_fader">
+		<resource name="RAM" quantum="5M"/>
+		<provides><service name="Nitpicker"/></provides>
+		<route>
+			<service name="ROM" label="config">
+				<child name="dynamic_rom" label="nit_fader.config"/>
+			</service>
+			<service name="Nitpicker"> <child name="nitpicker" /> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="scout">
+		<resource name="RAM" quantum="10M"/>
+		<route>
+			<service name="Nitpicker"> <child name="nit_fader" /> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="scout2">
+		<binary name="scout" />
+		<resource name="RAM" quantum="10M"/>
+		<route>
+			<service name="Nitpicker"> <child name="nitpicker" /> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+</config>}
+
+build { server/nit_fader }
+
+build_boot_image { nit_fader }
+
+run_genode_until forever

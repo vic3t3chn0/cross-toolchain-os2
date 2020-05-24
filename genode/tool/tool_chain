@@ -1,0 +1,554 @@
+#!/usr/bin/make -f
+#
+# \brief  Tool-chain creation tool for the Genode OS Framework
+# \author Norman Feske
+# \date   2009-02-03
+#
+
+help:
+	$(ECHO)
+	$(ECHO) "Build tool chain for the Genode OS Framework"
+	$(ECHO)
+	$(ECHO) "The tool chain consists of GCC $(GCC_VERSION) and binutils $(BINUTILS_VERSION)"
+	$(ECHO) "and will be created at '$(LOCAL_INSTALL_LOCATION)'."
+	$(ECHO)
+	$(ECHO) "--- available commands ---"
+	$(ECHO) "x86         - create tool chain for x86"
+	$(ECHO) "arm         - create tool chain for arm"
+	$(ECHO) "aarch64     - create tool chain for aarch64/arm64"
+	$(ECHO) "riscv       - create tool chain for riscv"
+	$(ECHO) "clean       - clean everything except downloaded archives"
+	$(ECHO) "cleanall    - clean everything including downloaded archives"
+	$(ECHO)
+	$(ECHO) "--- available command line options ---"
+	$(ECHO) "MAKE_JOBS=...        - number of parallel make jobs (default: 4)"
+	$(ECHO) "BUILD_LOCATION=...   - build location (default: $(DEFAULT_BUILD_LOCATION))"
+	$(ECHO) "INSTALL_LOCATION=... - install location (default: $(DEFAULT_INSTALL_LOCATION))"
+	$(ECHO) "SUDO=...             - name of sudo command, leave empty to not use sudo (default: sudo)"
+	$(ECHO)
+
+#
+# User interface
+#
+
+SUPPORTED_PLATFORMS := x86 arm riscv aarch64
+
+PLATFORM := $(firstword $(filter $(SUPPORTED_PLATFORMS),$(MAKECMDGOALS)))
+
+$(SUPPORTED_PLATFORMS): install
+
+#
+# Enable parallel build for 2nd-level $(MAKE) by default
+#
+
+MAKE_JOBS ?= 4
+
+#
+# Determine Genode base directory based on the known location of the
+# 'tool_chain' tool within the Genode source tree
+#
+
+GENODE_DIR ?= $(realpath $(dir $(firstword $(MAKEFILE_LIST)))/..)
+
+#
+# version numbers
+#
+
+TOOL_CHAIN_VERSION = 19.05
+GCC_VERSION        = 8.3.0
+BINUTILS_VERSION   = 2.32
+
+#
+# locations
+#
+
+DEFAULT_BUILD_LOCATION   = $(GENODE_DIR)/build/tool_chain-$(TOOL_CHAIN_VERSION)
+DEFAULT_INSTALL_LOCATION = /usr/local/genode/tool/$(TOOL_CHAIN_VERSION)
+
+BUILD_LOCATION   ?= $(DEFAULT_BUILD_LOCATION)
+INSTALL_LOCATION ?= $(DEFAULT_INSTALL_LOCATION)
+
+#
+# Utilities
+#
+
+##
+# Return $(2) if $(1) is empty, "" else
+#
+check_nonempty_f = $(if $(1),,$(info $(2))$(2))
+
+##
+# Return $(3) if $(1) != $(2), "" else
+#
+check_equal_f = $(if $(filter $(1),$(2)),,$(info $(3))$(3))
+
+
+SHELL        = bash
+BRIGHT_COL   = \033[01;33m
+DEFAULT_COL  = \033[0m
+ECHO         = @echo -e
+VERBOSE     ?= @
+SUDO        ?= sudo
+
+#
+# Check if 'autoconf' is installed
+#
+AUTOCONF_VERSION = 2.64
+
+AUTOCONF_VERSION_STRING = "autoconf (GNU Autoconf) $(AUTOCONF_VERSION)"
+ifeq ($(shell autoconf -V | grep $(AUTOCONF_VERSION_STRING)),)
+  ifeq ($(shell which autoconf$(AUTOCONF_VERSION)),)
+    ifneq ($(shell which autoconf-$(AUTOCONF_VERSION)),)
+      AUTOCONF = autoconf-$(AUTOCONF_VERSION)
+    endif
+  else
+    AUTOCONF = autoconf$(AUTOCONF_VERSION)
+  endif
+else
+  AUTOCONF = autoconf
+endif
+
+AUTOCONFINST_OK = $(call check_nonempty_f,$(AUTOCONF),\
+                    Need to have 'autoconf-$(AUTOCONF_VERSION)' installed.)
+
+#
+# Check if 'pkg-config' is installed
+#
+PKG_CONFIG_OK = $(call check_nonempty_f,$(shell which pkg-config),\
+                Need to have 'pkg-config' installed.)
+
+#
+# Check if 'libncurses' is installed
+#
+CURSES_OK = $(call check_equal_f,\
+              $(shell pkg-config --exists ncurses && echo ok),ok,\
+              Need to have 'libncurses' installed.)
+
+#
+# Check if 'texinfo' is installed
+#
+TEXINFO_OK = $(call check_nonempty_f,$(shell which texi2pdf),\
+               Need to have 'texinfo' installed.)
+
+#
+# Check if 'wget' is installed
+#
+WGET_OK = $(call check_nonempty_f,$(shell which wget),\
+            Need to have 'wget' installed.)
+
+#
+# Check if 'autogen' is installed
+#
+AUTOGEN_OK = $(call check_nonempty_f,$(shell which autogen),\
+               Need to have 'autogen' installed.)
+
+#
+# Check if 'gpg' is installed
+#
+GPG_OK = $(call check_nonempty_f,$(shell which gpg),\
+           Need to have 'gpg' installed.)
+
+#
+# Check if 'libexpat' is installed
+#
+EXPAT_OK = $(call check_equal_f,\
+             $(shell pkg-config --exists expat && echo ok),ok,\
+             Need to have 'libexpat' installed.)
+
+#
+# Check if 'GNAT' is installed
+#
+# The '-dumpfullversion' option is used by GCC version 7, the '-dumpversion' option
+# is used by GCC versions < 7.
+#
+HOST_GCC_VERSION := $(shell gcc -dumpfullversion -dumpversion)
+GNAT_OK = $(call check_equal_f,$(shell gnatmake --version | sed -n -e 's/GNATMAKE //p'),$(HOST_GCC_VERSION),\
+            Need to have GNAT installed and the GNAT version must match the GCC version (found GCC $(HOST_GCC_VERSION)).)
+
+#
+# Check if 'gprbuild' is installed
+#
+GPRBUILD_OK = $(call check_nonempty_f,$(shell which gprbuild),\
+                Need to have 'gprbuild' installed.)
+
+TOOLS_OK = $(AUTOCONF_OK) $(AUTOCONFINST_OK) $(PKG_CONFIG_OK) $(CURSES_OK) \
+           $(TEXINFO_OK) $(WGET_OK) $(AUTOGEN_OK) $(GPG_OK) $(EXPAT_OK) \
+           $(GNAT_OK) $(GPRBUILD_OK)
+
+ifneq ($(strip $(TOOLS_OK)),)
+$(error Please install missing tools.)
+endif
+
+#
+# 'configure' parameters for binutils, gcc and gdb
+#
+
+LOCAL_BOOTSTRAP_INSTALL_LOCATION = $(BUILD_LOCATION)/bootstrap/install
+export PATH := $(LOCAL_BOOTSTRAP_INSTALL_LOCATION)/bin:$(PATH)
+
+LOCAL_INSTALL_LOCATION = $(BUILD_LOCATION)/install
+
+#
+# Local install location for gmp, mpfr, and mpc libraries. These libraries are
+# requried at build time of gcc. We install them locally before invoking the
+# gcc build. Because the libs do not need to be included in the tool-chain
+# package (they are statically linked against gcc), we install them to a
+# different install location as gcc.
+#
+LOCAL_LIB_INSTALL_LOCATION = $(BUILD_LOCATION)/lib-install
+
+TARGET_NAME_x86        = x86_64-pc-elf
+TARGET_NAME_arm        = arm-none-eabi
+TARGET_NAME_riscv      = riscv64-unknown-elf
+TARGET_NAME_aarch64    = aarch64-none-elf
+
+GCC_CONFIG_riscv       = --with-arch=rv64imac --with-abi=lp64
+
+ifneq ($(VERBOSE),)
+CONFIG_QUIET = --quiet
+MAKEFLAGS   += --quiet
+export MAKEFLAGS
+endif
+
+COMMON_BOOTSTRAP_CONFIG = $(CONFIG_QUIET) \
+                          --prefix=$(LOCAL_BOOTSTRAP_INSTALL_LOCATION) \
+                          --disable-multilib
+
+BINUTILS_BOOTSTRAP_CONFIG += $(COMMON_BOOTSTRAP_CONFIG)
+
+ifeq ($(PLATFORM),riscv)
+LANGUAGES              = c,c++
+LIB_GCC                = cd $(INSTALL_LOCATION)/lib/gcc/riscv64-unknown-elf/$(GCC_VERSION)/rv64imac/lp64 && \
+                         $(SUDO) ln -sf ../../include include
+else
+LANGUAGES              = c,c++,ada
+LIB_GCC                =
+endif
+
+GCC_BOOTSTRAP_CONFIG += $(COMMON_BOOTSTRAP_CONFIG) \
+                        --enable-languages=c,c++,ada \
+                        --disable-bootstrap \
+                        --disable-libatomic \
+                        --disable-libcilkrts \
+                        --disable-libgomp \
+                        --disable-libitm \
+                        --disable-libmpx \
+                        --disable-libsanitizer \
+                        --disable-libquadmath \
+                        --disable-libssp \
+                        --with-gmp=$(LOCAL_LIB_INSTALL_LOCATION) \
+                        --with-mpfr=$(LOCAL_LIB_INSTALL_LOCATION) \
+                        --with-mpc=$(LOCAL_LIB_INSTALL_LOCATION)
+
+COMMON_CONFIG = $(CONFIG_QUIET) \
+                --prefix=$(LOCAL_INSTALL_LOCATION) \
+                --program-prefix=genode-$(PLATFORM)- \
+                --target=$(TARGET_NAME_$(PLATFORM)) \
+                --program-transform-name="s/$(TARGET_NAME_$(PLATFORM))/$(PLATFORM)/"
+
+BINUTILS_CONFIG += $(COMMON_CONFIG) --disable-werror
+
+#
+# Prevent GNU assembler from treating '/' as the start of a comment. In
+# 'gas/config/tc-i386.c', the policy of handling '/' is defined. For Linux, '/'
+# is treated as division, which we expect. To apply this needed policy for our
+# plain 'elf' version gas, we supply the definition of 'TE_LINUX' by hand.
+# Fortunately, this define is not used outside of gas.
+#
+BINUTILS_CONFIG += CFLAGS=-DTE_LINUX
+
+# Disable the generation of new relocation types introduced with binutils 2.26
+# which are not recognized by older 'ld' versions. This is needed for hybrid
+# Genode/Linux components on Ubuntu 14.04 with binutils 2.24.
+BINUTILS_CONFIG_x86 += --disable-x86-relax-relocations
+
+#
+# Add platform-specific binutils configure arguments
+#
+BINUTILS_CONFIG += $(BINUTILS_CONFIG_$(PLATFORM))
+
+#
+# GDB configure arguments
+#
+GDB_CONFIG += $(COMMON_CONFIG) --disable-werror
+
+GCC_CONFIG += $(COMMON_CONFIG) \
+              --enable-languages=$(LANGUAGES),go \
+              --disable-libgo \
+              --disable-gotools \
+              --disable-libssp \
+              --disable-libquadmath \
+              --disable-libffi \
+              --disable-libada \
+              --enable-targets=all \
+              --with-gnu-as \
+              --with-gnu-ld \
+              --disable-tls \
+              --disable-threads \
+              --disable-hosted-libstdcxx \
+              --enable-shared \
+              --enable-multiarch \
+              --disable-sjlj-exceptions \
+              --with-gmp=$(LOCAL_LIB_INSTALL_LOCATION) \
+              --with-mpfr=$(LOCAL_LIB_INSTALL_LOCATION) \
+              --with-mpc=$(LOCAL_LIB_INSTALL_LOCATION) \
+              CFLAGS_FOR_TARGET="-I$(GENODE_DIR)/tool -DUSE_PT_GNU_EH_FRAME -Dinhibit_libc -fPIC" \
+              CXXFLAGS_FOR_TARGET="-fPIC"
+
+GCC_CONFIG += $(GCC_CONFIG_$(PLATFORM))
+
+#
+# Configure options passed to gcc
+#
+HOST_CONFIG_ARGS = $(CONFIG_QUIET)
+
+#
+# Passed to target components such as libgcc, libstdc++
+#
+TARGET_CONFIG_ARGS = $(CONFIG_QUIET)
+
+GCC_INSTALL_RULE = install-strip
+
+MAKE_OPT += GENODE="yes"
+
+#
+# Platform-specific multilib support
+#
+
+GCC_MAKE_OPT_x86 := MULTILIB_OPTIONS="m64/m32" MULTILIB_DIRNAMES="64 32"
+GCC_MAKE_OPT += $(MAKE_OPT) $(GCC_MAKE_OPT_$(PLATFORM))
+
+#
+# Build rules and dependencies between build steps
+#
+# We use the binaries 'objdump' and 'g++' as representatives for expressing
+# dependencies. All other programs will be generated as side effect.
+#
+
+BINUTILS_BOOTSTRAP_BINARIES           = $(BUILD_LOCATION)/bootstrap/binutils/binutils/objdump
+BINUTILS_BOOTSTRAP_INSTALLED_BINARIES = $(LOCAL_BOOTSTRAP_INSTALL_LOCATION)/bin/objdump
+GCC_BOOTSTRAP_BINARIES                = $(BUILD_LOCATION)/bootstrap/gcc/gcc/xg++
+GCC_BOOTSTRAP_INSTALLED_BINARIES      = $(LOCAL_BOOTSTRAP_INSTALL_LOCATION)/bin/g++
+
+BINUTILS_BINARIES           = $(BUILD_LOCATION)/$(PLATFORM)/binutils/binutils/objdump
+BINUTILS_INSTALLED_BINARIES = $(LOCAL_INSTALL_LOCATION)/bin/genode-$(PLATFORM)-objdump
+GCC_BINARIES                = $(BUILD_LOCATION)/$(PLATFORM)/gcc/gcc/g++-cross
+GCC_INSTALLED_BINARIES      = $(LOCAL_INSTALL_LOCATION)/bin/genode-$(PLATFORM)-g++
+GDB_BINARIES                = $(BUILD_LOCATION)/$(PLATFORM)/gdb/gdb/gdb
+GDB_INSTALLED_BINARIES      = $(LOCAL_INSTALL_LOCATION)/bin/genode-$(PLATFORM)-gdb
+ALI2DEP_BINARY              = $(BUILD_LOCATION)/ali2dep/ali2dep
+ALI2DEP_INSTALLED_BINARY    = $(LOCAL_INSTALL_LOCATION)/bin/genode-$(PLATFORM)-ali2dep
+
+build_all: $(GCC_INSTALLED_BINARIES) $(GDB_INSTALLED_BINARIES) $(ALI2DEP_INSTALLED_BINARY)
+
+GMP_CONTRIB_DIR = $(shell $(GENODE_DIR)/tool/ports/current gmp)/src/lib/gmp
+
+$(GMP_CONTRIB_DIR)/configure:
+	$(ECHO) "$(BRIGHT_COL)preparing gmp...$(DEFAULT_COL)"
+	$(VERBOSE)$(GENODE_DIR)/tool/ports/prepare_port gmp
+
+MPFR_CONTRIB_DIR = $(shell $(GENODE_DIR)/tool/ports/current mpfr)/src/lib/mpfr
+
+$(MPFR_CONTRIB_DIR)/configure:
+	$(ECHO) "$(BRIGHT_COL)preparing mpfr...$(DEFAULT_COL)"
+	$(VERBOSE)$(GENODE_DIR)/tool/ports/prepare_port mpfr
+
+MPC_CONTRIB_DIR = $(shell $(GENODE_DIR)/tool/ports/current mpc)/src/lib/mpc
+
+$(MPC_CONTRIB_DIR)/configure:
+	$(ECHO) "$(BRIGHT_COL)preparing mpc...$(DEFAULT_COL)"
+	$(VERBOSE)$(GENODE_DIR)/tool/ports/prepare_port mpc
+
+GCC_CONTRIB_DIR = $(shell $(GENODE_DIR)/tool/ports/current gcc)/src/noux-pkg/gcc
+
+$(GCC_CONTRIB_DIR)/configure:
+	$(ECHO) "$(BRIGHT_COL)preparing gcc...$(DEFAULT_COL)"
+	$(VERBOSE)$(GENODE_DIR)/tool/ports/prepare_port gcc
+
+BINUTILS_CONTRIB_DIR = $(shell $(GENODE_DIR)/tool/ports/current binutils)/src/noux-pkg/binutils
+
+$(BINUTILS_CONTRIB_DIR)/configure:
+	$(ECHO) "$(BRIGHT_COL)preparing binutils...$(DEFAULT_COL)"
+	$(VERBOSE)$(GENODE_DIR)/tool/ports/prepare_port binutils
+
+$(BUILD_LOCATION)/bootstrap/binutils/Makefile: $(BINUTILS_CONTRIB_DIR)/configure
+	$(ECHO) "$(BRIGHT_COL)configuring bootstrap binutils...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); $(BINUTILS_CONTRIB_DIR)/configure $(BINUTILS_BOOTSTRAP_CONFIG)
+
+$(BINUTILS_BOOTSTRAP_BINARIES): $(BUILD_LOCATION)/bootstrap/binutils/Makefile
+	$(ECHO) "$(BRIGHT_COL)building bootstrap binutils...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(dir $<) -j$(MAKE_JOBS)
+
+$(BINUTILS_BOOTSTRAP_INSTALLED_BINARIES): $(BINUTILS_BOOTSTRAP_BINARIES)
+	$(ECHO) "$(BRIGHT_COL)installing bootstrap binutils...$(DEFAULT_COL)"
+	$(VERBOSE)for i in binutils gas ld intl opcodes; do \
+		$(MAKE) -C $(BUILD_LOCATION)/bootstrap/binutils/$$i install-strip; done
+	$(VERBOSE)$(MAKE) -C $(BUILD_LOCATION)/bootstrap/binutils/libiberty install
+
+$(BUILD_LOCATION)/$(PLATFORM)/binutils/Makefile: $(BINUTILS_CONTRIB_DIR)/configure \
+                                     $(GCC_BOOTSTRAP_INSTALLED_BINARIES)
+	$(ECHO) "$(BRIGHT_COL)configuring binutils...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); $(BINUTILS_CONTRIB_DIR)/configure $(BINUTILS_CONFIG)
+
+$(BINUTILS_BINARIES): $(BUILD_LOCATION)/$(PLATFORM)/binutils/Makefile
+	$(ECHO) "$(BRIGHT_COL)building binutils...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(dir $<) $(MAKE_OPT) -j$(MAKE_JOBS)
+
+$(BINUTILS_INSTALLED_BINARIES): $(BINUTILS_BINARIES)
+	$(ECHO) "$(BRIGHT_COL)installing binutils...$(DEFAULT_COL)"
+	$(VERBOSE)for i in binutils gas ld intl opcodes; do \
+		$(MAKE) -C $(BUILD_LOCATION)/$(PLATFORM)/binutils/$$i install-strip $(MAKE_OPT); done
+	$(VERBOSE)$(MAKE) -C $(BUILD_LOCATION)/$(PLATFORM)/binutils/libiberty install $(MAKE_OPT)
+
+COMMON_LIB_CONFIG = --prefix=$(LOCAL_LIB_INSTALL_LOCATION) \
+                    --disable-shared --enable-static
+
+GMP_CONFIG  = $(COMMON_LIB_CONFIG)
+MPFR_CONFIG = $(COMMON_LIB_CONFIG) --with-gmp=$(LOCAL_LIB_INSTALL_LOCATION)
+MPC_CONFIG  = $(COMMON_LIB_CONFIG) --with-gmp=$(LOCAL_LIB_INSTALL_LOCATION) \
+                                   --with-mpfr=$(LOCAL_LIB_INSTALL_LOCATION)
+
+$(LOCAL_LIB_INSTALL_LOCATION)/lib/libgmp.a:  $(BUILD_LOCATION)/gmp/Makefile
+$(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpfr.a: $(BUILD_LOCATION)/mpfr/Makefile
+$(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpc.a:  $(BUILD_LOCATION)/mpc/Makefile
+
+# rule to build libgmp, libmpfr, and libmpc
+$(LOCAL_LIB_INSTALL_LOCATION)/lib/lib%.a:
+	$(ECHO) "$(BRIGHT_COL)building lib$*...$(DEFAULT_COL)"
+	$(VERBOSE)make -C $(BUILD_LOCATION)/$* all install
+
+$(BUILD_LOCATION)/gmp/Makefile: $(GMP_CONTRIB_DIR)/configure
+
+$(BUILD_LOCATION)/gmp/Makefile:
+	$(ECHO) "$(BRIGHT_COL)configuring libgmp...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); \
+		$(GMP_CONTRIB_DIR)/configure $(GMP_CONFIG)
+
+$(BUILD_LOCATION)/mpfr/Makefile: $(MPFR_CONTRIB_DIR)/configure \
+                                 $(LOCAL_LIB_INSTALL_LOCATION)/lib/libgmp.a
+
+$(BUILD_LOCATION)/mpfr/Makefile:
+	$(ECHO) "$(BRIGHT_COL)configuring libmpfr...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); \
+		$(MPFR_CONTRIB_DIR)/configure $(MPFR_CONFIG)
+
+$(BUILD_LOCATION)/mpc/Makefile: $(MPC_CONTRIB_DIR)/configure \
+                                $(LOCAL_LIB_INSTALL_LOCATION)/lib/libgmp.a \
+                                $(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpfr.a
+
+$(BUILD_LOCATION)/mpc/Makefile:
+	$(ECHO) "$(BRIGHT_COL)configuring libmpc...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); \
+		$(MPC_CONTRIB_DIR)/configure $(MPC_CONFIG)
+
+$(BUILD_LOCATION)/bootstrap/gcc/Makefile: $(GCC_CONTRIB_DIR)/configure \
+                                          $(BINUTILS_BOOTSTRAP_INSTALLED_BINARIES) \
+                                          $(LOCAL_LIB_INSTALL_LOCATION)/lib/libgmp.a \
+                                          $(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpfr.a \
+                                          $(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpc.a
+
+$(BUILD_LOCATION)/bootstrap/gcc/Makefile:
+	$(ECHO) "$(BRIGHT_COL)configuring bootstrap gcc...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); $(GCC_CONTRIB_DIR)/configure $(GCC_BOOTSTRAP_CONFIG)
+
+$(GCC_BOOTSTRAP_BINARIES): $(BUILD_LOCATION)/bootstrap/gcc/Makefile
+	$(ECHO) "$(BRIGHT_COL)building bootstrap gcc...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(dir $<) -j$(MAKE_JOBS)
+
+$(GCC_BOOTSTRAP_INSTALLED_BINARIES): $(GCC_BOOTSTRAP_BINARIES)
+	$(ECHO) "$(BRIGHT_COL)installing bootstrap gcc...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(BUILD_LOCATION)/bootstrap/gcc $(GCC_INSTALL_RULE)
+
+$(BUILD_LOCATION)/$(PLATFORM)/gcc/Makefile: $(GCC_CONTRIB_DIR)/configure \
+                                            $(BINUTILS_INSTALLED_BINARIES) \
+                                            $(LOCAL_LIB_INSTALL_LOCATION)/lib/libgmp.a \
+                                            $(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpfr.a \
+                                            $(LOCAL_LIB_INSTALL_LOCATION)/lib/libmpc.a
+
+$(BUILD_LOCATION)/$(PLATFORM)/gcc/Makefile:
+	$(ECHO) "$(BRIGHT_COL)configuring gcc...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); \
+		host_configargs="$(HOST_CONFIG_ARGS)" \
+		target_configargs="$(TARGET_CONFIG_ARGS)" \
+		$(GCC_CONTRIB_DIR)/configure $(GCC_CONFIG)
+
+$(GCC_BINARIES): $(BUILD_LOCATION)/$(PLATFORM)/gcc/Makefile
+
+$(GCC_BINARIES):
+	$(ECHO) "$(BRIGHT_COL)building gcc...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(dir $<) $(GCC_MAKE_OPT) -j$(MAKE_JOBS)
+
+$(GCC_INSTALLED_BINARIES): $(GCC_BINARIES)
+	$(ECHO) "$(BRIGHT_COL)installing gcc...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(BUILD_LOCATION)/$(PLATFORM)/gcc $(GCC_INSTALL_RULE) $(GCC_MAKE_OPT)
+
+GDB_CONTRIB_DIR = $(shell $(GENODE_DIR)/tool/ports/current gdb)/src/noux-pkg/gdb
+
+$(GDB_CONTRIB_DIR)/configure:
+	$(ECHO) "$(BRIGHT_COL)preparing gdb...$(DEFAULT_COL)"
+	$(VERBOSE)$(GENODE_DIR)/tool/ports/prepare_port gdb
+
+$(BUILD_LOCATION)/$(PLATFORM)/gdb/Makefile: $(GDB_CONTRIB_DIR)/configure
+	$(ECHO) "$(BRIGHT_COL)configuring gdb...$(DEFAULT_COL)"
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)cd $(dir $@); \
+		$(GDB_CONTRIB_DIR)/configure $(GDB_CONFIG)
+
+$(GDB_BINARIES): $(BUILD_LOCATION)/$(PLATFORM)/gdb/Makefile
+	$(ECHO) "$(BRIGHT_COL)building gdb...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(dir $<) $(MAKE_OPT) -j$(MAKE_JOBS)
+
+$(GDB_INSTALLED_BINARIES): $(GDB_BINARIES)
+	$(ECHO) "$(BRIGHT_COL)installing gdb...$(DEFAULT_COL)"
+	$(VERBOSE)$(MAKE) -C $(BUILD_LOCATION)/$(PLATFORM)/gdb install $(MAKE_OPT) MAKEINFO=true
+	$(VEBOSE)strip $@
+
+$(BUILD_LOCATION)/ali2dep/build/build.gpr:
+	$(ECHO) "$(BRIGHT_COL)preparing ali2dep...$(DEFAULT_COL)"
+	$(VERBOSE)git clone https://github.com/Componolit/ali2dep.git $(BUILD_LOCATION)/ali2dep
+	$(VERBOSE)sed -i -e '/Create_Missing_Dirs/d' $@
+
+#
+# Ubuntu 16.04 'gprconfig' looks for 'gnatgcc', so we create a symlink to 'gcc'
+#
+$(ALI2DEP_BINARY): $(GCC_BOOTSTRAP_INSTALLED_BINARIES) $(BUILD_LOCATION)/ali2dep/build/build.gpr
+	$(ECHO) "$(BRIGHT_COL)building ali2dep...$(DEFAULT_COL)"
+	$(VERBOSE)ln -sf gcc $(LOCAL_BOOTSTRAP_INSTALL_LOCATION)/bin/gnatgcc
+	$(VERBOSE)gprconfig --batch \
+	          --config=Ada,,default,$(LOCAL_BOOTSTRAP_INSTALL_LOCATION)/bin,GNAT \
+	          --config=C,,,$(LOCAL_BOOTSTRAP_INSTALL_LOCATION)/bin/,GCC \
+	          -o $(BUILD_LOCATION)/ali2dep/genode_bootstrap_tool_chain.cgpr
+	$(VERBOSE)GPRBUILD_ARGS="--config=genode_bootstrap_tool_chain.cgpr" $(MAKE) -C $(BUILD_LOCATION)/ali2dep
+
+$(ALI2DEP_INSTALLED_BINARY): $(ALI2DEP_BINARY)
+	$(ECHO) "$(BRIGHT_COL)installing ali2dep...$(DEFAULT_COL)"
+	$(VERBOSE)strip -o $@ $<
+
+#
+# Clean rules
+#
+
+clean:
+	rm -rf $(BUILD_LOCATION)
+
+cleanall: clean
+
+#
+# Install rules
+#
+
+install: build_all
+	$(ECHO) "$(BRIGHT_COL)installing tool chain to '$(INSTALL_LOCATION)'...$(DEFAULT_COL)"
+	$(VERBOSE)$(SUDO) mkdir -p $(INSTALL_LOCATION)
+	$(VERBOSE)$(SUDO) cp -a --remove-destination --no-target-directory $(LOCAL_INSTALL_LOCATION) $(INSTALL_LOCATION)
+	$(VERBOSE)$(LIB_GCC)
+ifeq ($(INSTALL_LOCATION),$(DEFAULT_INSTALL_LOCATION))
+	$(VERBOSE)$(SUDO) ln -snf $(TOOL_CHAIN_VERSION) $(dir $(INSTALL_LOCATION))/current
+endif

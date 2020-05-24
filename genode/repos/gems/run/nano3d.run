@@ -1,0 +1,118 @@
+create_boot_directory
+
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_interactive_pkg] \
+                  [depot_user]/raw/genode_bg \
+                  [depot_user]/pkg/backdrop \
+                  [depot_user]/src/init \
+                  [depot_user]/src/dynamic_rom \
+                  [depot_user]/src/nitpicker
+
+append config {
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+	</parent-provides>
+
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="100"/>
+
+	<start name="drivers" caps="1000">
+		<resource name="RAM" quantum="32M" constrain_phys="yes"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<provides>
+			<service name="Input"/> <service name="Framebuffer"/>
+		</provides>
+	</start>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+	</start>
+
+	<start name="nitpicker">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Nitpicker"/></provides>
+		<config>
+			<domain name="default" layer="2" content="client" label="no"/>
+			<domain name="nano3d"  layer="1" content="client" label="no" origin="pointer"/>
+
+			<policy label_prefix="nano3d" domain="nano3d"/>
+			<default-policy domain="default"/>
+		</config>
+	</start>
+
+	<start name="backdrop">
+		<resource name="RAM" quantum="20M"/>
+		<config>
+			<libc/>
+			<vfs>
+				<rom name="genode_logo.png"/>
+				<rom name="grid.png"/>
+			</vfs>
+			<fill color="#122334" />
+			<image png="grid.png"        tiled="yes" alpha="200" />
+			<image png="genode_logo.png" anchor="bottom_right" alpha="150"/>
+		</config>
+		<route>
+			<service name="Nitpicker"> <child name="nitpicker" label="backdrop" /> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+
+	<start name="dynamic_rom">
+		<resource name="RAM" quantum="4M"/>
+		<provides><service name="ROM"/></provides>
+		<config verbose="yes">
+			<rom name="nano3d.config">
+				<inline description="initial state">
+					<config painter="textures"/>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="RGBA shading">
+					<config painter="shaded"/>
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="switch to cube">
+					<config painter="shaded" shape="cube" />
+				</inline>
+				<sleep milliseconds="1000" />
+				<inline description="texturing">
+					<config painter="textured" shape="cube" />
+				</inline>
+				<sleep milliseconds="1000" />
+			</rom>
+		</config>
+	</start>
+
+	<start name="nano3d">
+		<resource name="RAM" quantum="8M"/>
+		<route>
+			<service name="ROM" label="config">
+				<child name="dynamic_rom" label="nano3d.config"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+</config>}
+
+install_config $config
+
+build { app/nano3d }
+
+build_boot_image { nano3d }
+
+run_genode_until forever

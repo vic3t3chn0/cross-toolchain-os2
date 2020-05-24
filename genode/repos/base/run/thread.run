@@ -1,0 +1,53 @@
+build "core init test/thread"
+
+create_boot_directory
+
+#
+# We skip pause-resume test on platforms where this functionality is not
+# supported.
+#
+proc pause_resume_supported { } {
+	if {[have_spec pistachio]} { return false }
+	if {[have_spec linux]}     { return false }
+	if {[have_spec fiasco]}    { return false }
+	return true
+}
+
+#
+# We skip the lock and C++ guard tests on kernels without priority support (as
+# it is needed for the test implementation).
+#
+proc prio_supported { } {
+	if {[have_spec hw]}        { return false }
+	if {[have_spec linux]}     { return false }
+	if {[have_spec fiasco]}    { return false }
+	return true
+}
+
+append config {
+	<config prio_levels="2">
+		<parent-provides>
+			<service name="LOG"/>
+			<service name="CPU"/>
+			<service name="ROM"/>
+			<service name="PD"/>
+		</parent-provides>
+		<default-route>
+			<any-service> <parent/> </any-service>
+		</default-route>
+		<start name="test-thread" caps="2000">
+			<resource name="RAM" quantum="10M"/>
+			<resource name="CPU" quantum="100"/>
+			<config pause_resume="} [pause_resume_supported] {" prio="} [prio_supported] {"/>
+		</start>
+	</config>
+}
+
+install_config $config
+
+build_boot_image "core ld.lib.so init test-thread"
+
+append qemu_args "-nographic "
+
+run_genode_until {.*test completed successfully.*\n} 60
+

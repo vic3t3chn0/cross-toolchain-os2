@@ -1,0 +1,18 @@
+LICENSE   := GPLv3
+VERSION   := git
+DOWNLOADS := muen.git
+
+URL(muen) := https://git.codelabs.ch/git/muen.git
+REV(muen) := 76b75b5f859f14397d146c16e5411142a6af11d0
+DIR(muen) := src/kernel/muen
+
+$(call check_tool,git)
+$(call check_tool,iasl)
+$(call check_tool,tidy)
+$(call check_tool,xsltproc)
+
+default : additional_steps
+additional_steps : $(DOWNLOADS)
+	$(VERBOSE)git -C src/kernel/muen submodule update --init tools/mugenschedcfg > /dev/null
+	$(VERBOSE)git -C src/kernel/muen submodule update --init components/libxhcidbg > /dev/null
+	$(VERBOSE)$(MAKE) -C src/kernel/muen/contrib QUIET=true download

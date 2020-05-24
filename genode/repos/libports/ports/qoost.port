@@ -1,0 +1,10 @@
+LICENSE   := MIT
+VERSION   := 2013-06-10
+DOWNLOADS := qoost.archive
+
+URL(qoost) := https://downloads.sourceforge.net/project/qoost/qoost-$(VERSION).tar.bz2
+SHA(qoost) := 1d2ea0346d9cd2116cca237bd49aad8fc1d40b3f4cc52d0dbb1ea2203c2965a6
+DIR(qoost) := src/lib/qoost
+
+DIRS := include
+DIR_CONTENT(include) := src/lib/qoost/include/qoost

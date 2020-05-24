@@ -1,0 +1,172 @@
+#!/usr/bin/make -f
+
+#
+# \brief  Extract API/source/binary archives from Genode source tree
+# \author Norman Feske
+# \date   2017-03-16
+#
+
+define HELP_MESSAGE
+
+  Extract API/source/raw archives from the Genode source tree
+
+  usage:
+
+    $(firstword $(MAKEFILE_LIST)) <archive-path>...
+
+  The <archive-path> argument denotes the archive to extract in the
+  form of a path. The first path element correponds to the identity
+  of the archive creator, the second element corresponds to the type
+  of the archive, and the third element refers to the recipe of
+  the archive description.
+
+  E.g., the user 'alan' may create the following archives:
+
+    alan/api/libc - an API archive for the libc
+    alan/src/zlib - a source archive for the zlib library
+
+  The following arguments tweak the operation of the tool:
+
+    FORCE=1            Replace existing archives with freshly created
+                       ones. This is useful during the development of
+                       recipes.
+
+    VERBOSE=           Show individual operations.
+
+    -j<N>              Enable the parallel creation of packages where
+                       <N> denotes the level of parallelism.
+
+    UPDATE_VERSIONS=1  Automatically increase the version of recipe
+                       hash files whenever their respective archive
+                       content has changed. The versions are named
+                       after the output of the VERSION_CMD, suffixed
+                       with a single letter in case VERSION_CMD would
+                       return the same version the archive already
+                       has.
+
+    VERSION_CMD=       The script whose output is used in case the
+                       archive version needs to be updated. The default
+                       is to use the current date.
+
+    PREPARE_PORTS=1    Prepare missing ports automatically.
+
+endef
+
+export GENODE_DIR := $(realpath $(dir $(MAKEFILE_LIST))/../..)
+
+# the extract tool expects archive paths given without the version element
+BIN_PKG_PATH_ELEMS := 4
+
+include $(GENODE_DIR)/tool/depot/mk/front_end.inc
+include $(GENODE_DIR)/tool/depot/mk/categorize_args.inc
+include $(GENODE_DIR)/tool/depot/mk/extract_pre_dependencies.inc
+include $(GENODE_DIR)/tool/depot/mk/dependencies.inc
+include $(GENODE_DIR)/tool/depot/mk/extract_post_dependencies.inc
+
+#
+# Generate makefile for archive-extraction stage
+#
+
+# return versioned archive path, if 'ARCHIVE_VERSION' is undefined, assume
+# that the argument is already a versiond path
+versioned_archive = $(if $(ARCHIVE_VERSION($1)),$(addsuffix /${ARCHIVE_VERSION($1)},$1),$1)
+
+EXTRACT_MK_FILE := $(DEPOT_DIR)/var/extract.mk
+
+.PHONY: $(EXTRACT_MK_FILE)
+
+wipe_existing_archives:
+	$(VERBOSE)rm -rf $(addprefix $(DEPOT_DIR)/, $(foreach TYPE,api src raw pkg,\
+	                                               $(foreach A,${ARCHIVES(${TYPE})},\
+	                                                  $(call versioned_archive,$A))))
+
+$(EXTRACT_MK_FILE): checked_versions_defined checked_no_uncategorized checked_ports_exist
+	$(VERBOSE)mkdir -p $(dir $@)
+	$(VERBOSE)( echo -e "all:\n"; \
+	            echo "TOOL_DIR := $(GENODE_DIR)/tool"; \
+	            $(foreach TYPE,api src raw pkg,\
+	                $(foreach A,${ARCHIVES(${TYPE})},\
+	                   target=$(call versioned_archive,$A); \
+	                   user=$(call archive_user,$A); \
+	                   recipe=$(call archive_recipe,$A); \
+	                   echo ""; \
+	                   echo "ARCHIVES(${TYPE}) += $$target"; \
+	                   echo "TOOL($$target) := extract_$(TYPE)_archive"; \
+	                   echo "ARGS($$target) := $$recipe USER=$$user"; \
+	             ) ) \
+	             echo -e ""; \
+	             $(foreach A,${ARCHIVES(pkg)},\
+	                $(foreach DEP,$(call pkg_pkg_archives,$A),\
+	                   echo -e "$(call versioned_archive,$A) :" \
+	                           "$(call versioned_archive,$(DEP))";)) \
+	             echo -e ""; \
+	             echo -e "\$${ARCHIVES(src)} : \$${ARCHIVES(api)}"; \
+	             echo -e "\$${ARCHIVES(pkg)} : \$${ARCHIVES(api)}"; \
+	             echo -e "\$${ARCHIVES(pkg)} : \$${ARCHIVES(src)}"; \
+	             echo -e "\$${ARCHIVES(pkg)} : \$${ARCHIVES(raw)}"; \
+	             echo -e "\nTARGETS := \$$(foreach T,api src raw pkg,\$${ARCHIVES(\$$T)})"; \
+	             echo -e "\nall: \$$(TARGETS)"; \
+	             echo -e "\n\$$(TARGETS):"; \
+	             echo -e "\t\$$(MAKE) -f \$$(TOOL_DIR)/depot/mk/\$${TOOL(\$$@)}" \
+	                     "\$${ARGS(\$$@)}" \
+	                     "VERBOSE=\$$(VERBOSE)" \
+	                     "UPDATE_VERSIONS=\$$(UPDATE_VERSIONS)\n"; \
+	          ) > $@
+
+#
+# Invoke sub make to process generated makefile
+#
+execute_generated_extract_mk_file: $(EXTRACT_MK_FILE)
+	$(VERBOSE)$(MAKE) $(QUIET) \
+	                  -f $(EXTRACT_MK_FILE) \
+	                  -C $(DEPOT_DIR) \
+	                  VERBOSE=$(VERBOSE) \
+	                  UPDATE_VERSIONS=$(UPDATE_VERSIONS)
+
+ifneq ($(FORCE),)
+execute_generated_extract_mk_file: wipe_existing_archives
+endif
+
+$(MAKECMDGOALS): execute_generated_extract_mk_file
+	@true
+
+#
+# Return shell script that handles missing ports
+#
+# \param $1  sorted list of missing ports file
+# \param $2  value of $(MAKE)
+#
+ifeq ($(PREPARE_PORTS),1)
+
+# automatic prepare enabled: prepare missing ports
+handle_missing_ports = $(if $1,$(VERBOSE)( \
+	echo -e ""; \
+	echo -e "Ports not prepared or outdated:"; \
+	echo -e "  $(1)"; \
+	echo -e ""; \
+	echo -e "Preparing ports..."; \
+	echo -e ""; \
+	$2 $(QUIET) \
+	   -f $(GENODE_DIR)/tool/ports/prepare_port \
+	   $(1); ),)
+
+else
+
+# automatic prepare not enabled: generate error
+handle_missing_ports = $(if $1,$(VERBOSE)( \
+	echo -e ""; \
+	echo -e "Error: Ports not prepared or outdated:"; \
+	echo -e "  $(1)"; \
+	echo -e ""; \
+	echo -e "You can prepare respectively update them as follows:"; \
+	echo -e "  $(GENODE_DIR)/tool/ports/prepare_port $(1)"; \
+	echo -e ""; \
+	false),)
+
+endif
+
+#
+# Check whether all required ports exist and if not, abort or prepare them
+#
+checked_ports_exist: update_missing_ports_file
+	$(call handle_missing_ports,$(call sorted_file_content,$(MISSING_PORTS_FILE)),$(MAKE))

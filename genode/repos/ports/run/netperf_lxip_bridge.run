@@ -1,0 +1,15 @@
+#
+# \brief  Test using netperf with a network bridge and with a  native driver or
+#         if not available for the platform using usb 3.0 by default
+# \author Alexander Boettcher
+# \date   2013-07-08
+#
+
+# network configuration
+set use_nic_bridge      1
+set use_nic_router      0
+set use_wifi_driver     0
+set use_usb_driver      0
+set use_lxip            1
+
+source ${genode_dir}/repos/ports/run/netperf.inc

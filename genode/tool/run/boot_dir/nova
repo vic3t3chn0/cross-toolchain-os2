@@ -1,0 +1,197 @@
+proc binary_name_ld_lib_so { } { return "ld-nova.lib.so" }
+proc binary_name_core_o    { } { return "core-nova.o" }
+proc binary_name_timer     { } { return "nova_timer_drv" }
+
+proc kernel_files { } { return hypervisor }
+proc kernel_output { } { return "novga serial" }
+
+proc run_boot_string { } {
+	return "\nHypervisor NOVA "
+}
+
+proc apply_microcode { } { return false }
+
+proc core_link_address { } { return "0x100000" }
+
+
+proc core_ld_opts { } {
+	set ret { -Wl,-T }
+	lappend ret "-Wl,[genode_dir]/repos/base/src/ld/genode.ld"
+	lappend ret "-Wl,[genode_dir]/repos/base-nova/src/core/core-bss.ld"
+	return $ret
+}
+
+##
+# Populate directory with binaries on NOVA
+#
+proc run_boot_dir {binaries} {
+
+	#
+	# Build kernel-specific targets if needed
+	#
+	# If the run scripts imports the base-nova binary archive, [run_dir] is
+	# already populated, so we can skip the build.
+	#
+	set kernel_arg ""
+	set core_arg   ""
+	set ld_arg     ""
+	if {![file exists [run_dir]/genode/hypervisor]}  { set kernel_arg kernel }
+	if {![file exists [run_dir]/genode/core-nova.o]} { set core_arg   core/nova }
+	if {![file exists [run_dir]/genode/ld.lib.so]}   { set ld_arg     lib/ld/nova }
+
+	set targets "$kernel_arg $core_arg $ld_arg"
+	if {[llength $targets]} { build $targets }
+
+	if {$kernel_arg != ""} { file copy -force bin/hypervisor     [run_dir]/genode/hypervisor }
+	if {$core_arg   != ""} { file copy -force bin/core-nova.o    [run_dir]/genode/core-nova.o }
+	if {$ld_arg     != ""} { file copy -force bin/ld-nova.lib.so [run_dir]/genode/ld.lib.so }
+
+	#
+	# Collect contents of the ISO image
+	#
+	build_core_image $binaries
+
+	exec mkdir -p [run_dir]/boot
+	exec [cross_dev_prefix]objcopy -O elf32-i386 [run_dir]/genode/hypervisor [run_dir]/boot/hypervisor
+	exec [cross_dev_prefix]strip [run_dir]/boot/hypervisor
+
+	remove_genode_dir
+
+	exec mv   [run_dir]/image.elf [run_dir]/boot/image.elf
+
+	if {[have_include "image/iso"] || [have_include "image/disk"] || [have_include image/uefi]} {
+		#
+		# Compress Genode image, to be uncompressed by GRUB
+		#
+		exec gzip [run_dir]/boot/image.elf
+
+		set serial_bender_opt ""
+
+		if {[apply_microcode]} {
+			exec cp bin/micro.code [run_dir]/boot/
+			exec cp [genode_dir]/tool/boot/microcode [run_dir]/boot/
+		}
+
+		if {[have_include "image/disk"]} {
+			exec mkdir -p [run_dir]/boot/grub
+			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+			exec cp [genode_dir]/tool/boot/boot.png [run_dir]/boot/boot.png
+			if {[file exists /boot/grub/unicode.pf2]} {
+				# needed in graphical menu with non-scrampled characters
+				# exec cp /boot/grub/unicode.pf2 [run_dir]/boot/grub/unicode.pf2
+			}
+		}
+
+		if {[have_include "image/iso"]} {
+			install_iso_bootloader_to_run_dir
+		}
+
+		if {[have_include image/uefi]} {
+			set grub2_path [get_grub2_dir]
+
+			exec mkdir -p [run_dir]/efi/boot
+			exec cp $grub2_path/boot/grub2/grub2_32.efi [run_dir]/efi/boot/bootia32.efi
+			exec cp $grub2_path/boot/grub2/grub2_64.efi [run_dir]/efi/boot/bootx64.efi
+			exec mkdir -p [run_dir]/boot/grub
+			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+
+			exec cp [genode_dir]/tool/boot/boot.png [run_dir]/boot/boot.png
+			if {[file exists /boot/grub/unicode.pf2]} {
+				# needed in graphical menu with non-scrampled characters
+				# exec cp /boot/grub/unicode.pf2 [run_dir]/boot/grub/unicode.pf2
+			}
+
+			set serial_bender_opt "serial_fallback"
+		}
+
+		#
+		# Generate GRUB2 config file
+		#
+		set fh [open "[run_dir]/boot/grub/grub.cfg" "WRONLY CREAT TRUNC"]
+
+		# If timeout != 0 is used and gfxterm, enable and add unicode.pf2 (see above)
+		# puts $fh "loadfont /boot/grub/unicode.pf2"
+		puts $fh "set timeout=0"
+
+		# choose best graphic mode
+		puts $fh "set gfxpayload=auto"
+
+		if {[have_include image/uefi]} {
+			puts $fh "insmod gfxterm"
+			puts $fh "terminal_output gfxterm"
+			puts $fh "insmod gfxterm_background"
+			puts $fh "insmod png"
+			puts $fh "background_image -m center /boot/boot.png"
+		}
+
+		# set this to get text console instead of graphical console
+		# puts $fh "terminal_input console"
+		# puts $fh "terminal_output console"
+
+		puts $fh "menuentry 'Genode on NOVA' {"
+		puts $fh " insmod multiboot2"
+		puts $fh " insmod gzio"
+		puts $fh " multiboot2 /boot/bender $serial_bender_opt"
+		if {[apply_microcode]} {
+			puts $fh " module2 /boot/microcode serial"
+			puts $fh " module2 /boot/micro.code micro.code"
+		}
+		puts $fh " module2 /boot/hypervisor hypervisor iommu novpid [kernel_output]"
+		puts $fh " module2 /boot/image.elf.gz image.elf"
+		puts $fh "}"
+		close $fh
+	}
+
+	#
+	# Build image
+	#
+	run_image
+
+	if {[have_include "load/tftp"]} {
+		#
+		# Install PXE bootloader pulsar
+		#
+		install_pxe_bootloader_to_run_dir
+
+		if {[apply_microcode]} {
+			exec cp [genode_dir]/tool/boot/microcode [run_dir]/boot/
+			exec cp bin/micro.code [run_dir]/boot/
+		}
+
+		#
+		# Generate pulsar config file
+		#
+		set fh [open "[run_dir]/config-52-54-00-12-34-56" "WRONLY CREAT TRUNC"]
+		puts $fh " exec /boot/bender"
+		if {[apply_microcode]} {
+			puts $fh " load /boot/microcode serial"
+			puts $fh " load /boot/micro.code micro.code"
+		}
+		puts $fh " load /boot/hypervisor iommu novpid [kernel_output]"
+		puts $fh " load /boot/image.elf"
+		close $fh
+
+		generate_tftp_config
+	}
+
+	if {[have_include "load/ipxe"]} {
+		create_ipxe_iso_config
+		update_ipxe_boot_dir
+		create_symlink_for_iso
+	}
+}
+
+
+##
+# Base source archive within depot
+#
+proc base_src { } {
+
+	if {[have_spec x86]} { return base-nova }
+
+	global specs
+
+	puts stderr "Test requires base-nova kernel archive, which is missing for this build configuration"
+	puts stderr "  SPECS=\"$specs\""
+	exit 0
+}

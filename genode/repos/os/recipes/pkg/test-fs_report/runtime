@@ -1,0 +1,82 @@
+<runtime ram="32M" caps="1000" binary="init">
+
+	<requires> <timer/> </requires>
+
+	<events>
+		<timeout meaning="failed" sec="15" />
+		<log     meaning="succeeded">child "test-fs_report" exited with exit value 0</log>
+		<log     meaning="failed"   >child "test-fs_report" exited with exit value -1</log>
+	</events>
+
+	<content>
+		<rom label="ld.lib.so"/>
+		<rom label="vfs"/>
+		<rom label="fs_report"/>
+		<rom label="fs_rom"/>
+		<rom label="test-fs_report"/>
+		<rom label="vfs.lib.so"/>
+		<rom label="vfs_import.lib.so"/>
+	</content>
+
+	<config>
+		<parent-provides>
+			<service name="CPU"/>
+			<service name="LOG"/>
+			<service name="PD"/>
+			<service name="ROM"/>
+			<service name="Timer"/>
+		</parent-provides>
+
+		<default-route>
+			<any-service> <parent/> <any-child/> </any-service>
+		</default-route>
+
+		<default caps="100"/>
+
+		<start name="ram_fs">
+			<resource name="RAM" quantum="4M"/>
+			<binary name="vfs"/>
+			<provides> <service name="File_system"/> </provides>
+			<config>
+				<vfs>
+					<ram/>
+					<import>
+						<dir name="test-fs_report">
+							<inline name="devices">
+								<devices version="initial"/>
+							</inline>
+						</dir>
+					</import>
+				</vfs>
+				<policy label_prefix="fs_report -> " root="/" writeable="yes"/>
+				<policy label_prefix="fs_rom -> "    root="/test-fs_report"/>
+				<policy label_prefix="test-fs_report -> " root="/test-fs_report" writeable="yes"/>
+			</config>
+		</start>
+		<!--
+		  All reports sent by 'test-fs_report' are prefixed with the label of the
+		  component. Hence, they are written to the 'test-fs_report/' subdirectory.
+		  -->
+		<start name="fs_report">
+			<resource name="RAM" quantum="4M"/>
+			<provides> <service name="Report"/> </provides>
+			<config> <vfs> <fs/> </vfs> </config>
+		</start>
+		<start name="fs_rom">
+			<resource name="RAM" quantum="4M"/>
+			<provides> <service name="ROM"/> </provides>
+			<config/>
+		</start>
+		<start name="test-fs_report">
+			<resource name="RAM" quantum="4M"/>
+			<config> <vfs> <fs/> </vfs> </config>
+			<route>
+				<service name="ROM"    label="devices"> <child name="fs_rom"/> </service>
+				<service name="ROM"    label="focus">   <child name="fs_rom"/> </service>
+				<service name="Report" label="devices"> <child name="fs_report"/> </service>
+				<service name="Report" label="focus">   <child name="fs_report"/> </service>
+				<any-service> <parent/> <any-child/> </any-service>
+			</route>
+		</start>
+	</config>
+</runtime>
